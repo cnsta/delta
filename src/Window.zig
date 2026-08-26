@@ -9,6 +9,7 @@ const wm = &@import("Delta.zig").instance;
 const list = @import("util/list.zig");
 
 const Seat = @import("Seat.zig");
+const Workspace = @import("Workspace.zig");
 
 const Window = @This();
 
@@ -20,6 +21,8 @@ workspace_link: wl.list.Link,
 
 new: bool = true,
 closed: bool = false,
+
+workspace: ?*Workspace = null,
 
 x: i32 = 0,
 y: i32 = 0,
@@ -68,10 +71,25 @@ pub fn maybeDestroy(window: *Window) void {
     wm.gpa.destroy(window);
 }
 
+pub fn setWorkspace(window: *Window, target: *Workspace) void {
+    if (window.workspace == target) return;
+
+    if (window.workspace != null) window.workspace_link.remove();
+    window.workspace = target;
+    target.windows.append(window);
+
+    window.syncPosition();
+}
+
 pub fn setPosition(window: *Window, x: i32, y: i32) void {
     window.x = x;
     window.y = y;
     window.syncPosition();
+}
+
+pub fn syncPosition(window: *Window) void {
+    const origin = if (window.workspace) |ws| ws.origin() else Workspace.offscreen;
+    window.node.setPosition(origin.x + window.x, origin.y + window.y);
 }
 
 pub fn visible(window: *const Window) bool {
@@ -82,6 +100,7 @@ pub fn visible(window: *const Window) bool {
 pub fn manage(window: *Window) void {
     if (window.new) {
         window.new = false;
+        window.setWorkspace(Workspace.forNewWindow());
         window.setPosition(0, 0);
         window.obj.proposeDimensions(0, 0);
     }
