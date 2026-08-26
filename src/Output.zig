@@ -50,7 +50,6 @@ pub fn maybeDestroy(output: *Output) void {
     if (!output.removed) return;
 
     output.workspace.output = null;
-    output.workspace.syncPositions();
     output.previous = null;
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
@@ -71,9 +70,6 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
     output.workspace = target;
     target.output = output;
-
-    outgoing.syncPositions();
-    target.syncPositions();
 }
 
 pub fn contains(output: *const Output, point: geom.Point) bool {
@@ -95,7 +91,6 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
         .position => |args| {
             output.x = args.x;
             output.y = args.y;
-            output.workspace.syncPositions();
         },
         .dimensions => |args| {
             output.width = args.width;
