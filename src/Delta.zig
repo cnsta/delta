@@ -73,7 +73,7 @@ pub fn listener(
         .window => |ev| Window.create(ev.id),
         .output => |ev| Output.create(ev.id),
         .seat => |ev| Seat.create(ev.id),
-        // else => {},
+        else => {},
     }
 }
 
@@ -104,6 +104,21 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |window| window.manage();
     }
 
+    {
+        var it = list.safeIterator(Workspace, .link, &delta.workspaces);
+        while (it.next()) |workspace| {
+            const output = workspace.output orelse continue;
+            const usable = output.usableArea();
+
+            workspace.layout.arrange(.{
+                .x = usable.x - output.x,
+                .y = usable.y - output.y,
+                .width = usable.width,
+                .height = usable.height,
+            });
+        }
+    }
+
     delta.syncLayerShellDefault();
 
     // TODO(ipc): snapshot + diff + publish goes here, after every mutation and
@@ -123,8 +138,8 @@ fn syncLayerShellDefault(delta: *Delta) void {
 }
 
 fn renderStart(delta: *Delta) void {
-    var it = list.safeIterator(Seat, .link, &delta.seats);
-    while (it.next()) |seat| seat.render();
+    var it = list.safeIterator(Window, .link, &delta.windows);
+    while (it.next()) |window| window.center();
 
     delta.obj.renderFinish();
 }
