@@ -26,6 +26,8 @@ windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 workspaces: wl.list.Head(Workspace, .link),
 
+locked: bool = false,
+
 pub fn init(
     gpa: std.mem.Allocator,
     io: std.Io,
@@ -59,6 +61,8 @@ pub fn listener(
     switch (event) {
         .unavailable => std.process.fatal("Another window manager is already running.", .{}),
         .finished => std.process.exit(0),
+        .session_locked => instance.locked = true,
+        .session_unlocked => instance.locked = false,
         .manage_start => instance.manageStart(),
         .render_start => instance.renderStart(),
         .window => |ev| Window.create(ev.id),
