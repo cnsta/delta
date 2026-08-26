@@ -71,13 +71,13 @@ pub fn isEmpty(ws: *const Workspace) bool {
 }
 
 pub fn cursor(ws: *Workspace) ?geom.Point {
-    const origin = ws.origin() orelse return null;
     const seat = wm.seats.first() orelse return null;
     if (!seat.pointer_known) return null;
+    const topleft = ws.origin() orelse return null;
 
     return .{
-        .x = seat.pointer.x - origin.x,
-        .y = seat.pointer.y - origin.y,
+        .x = seat.pointer.x - topleft.x,
+        .y = seat.pointer.y - topleft.y,
     };
 }
 
