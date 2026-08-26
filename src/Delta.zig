@@ -8,7 +8,7 @@ const list = @import("util/list.zig");
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
-// const Window = @import("Window.zig");
+const Window = @import("Window.zig");
 // const Workspace = @import("Workspace.zig");
 
 const Delta = @This();
@@ -22,7 +22,7 @@ obj: *river.WindowManagerV1,
 xkb_bindings: *river.XkbBindingsV1,
 
 outputs: wl.list.Head(Output, .link),
-// windows: wl.list.Head(Window, .link),
+windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 // workspaces: wl.list.Head(Workspace, .link),
 
@@ -61,7 +61,7 @@ pub fn listener(
         .finished => std.process.exit(0),
         .manage_start => instance.manageStart(),
         .render_start => instance.renderStart(),
-        // .window => |ev| Window.create(ev.id),
+        .window => |ev| Window.create(ev.id),
         .output => |ev| Output.create(ev.id),
         .seat => |ev| Seat.create(ev.id),
         else => {},
@@ -69,10 +69,10 @@ pub fn listener(
 }
 
 fn manageStart(delta: *Delta) void {
-    // {
-    //     var it = list.safeIterator(Window, .link, &delta.windows);
-    //     while (it.next()) |window| window.maybeDestroy();
-    // }
+    {
+        var it = list.safeIterator(Window, .link, &delta.windows);
+        while (it.next()) |window| window.maybeDestroy();
+    }
     {
         var it = list.safeIterator(Output, .link, &delta.outputs);
         while (it.next()) |output| output.maybeDestroy();
@@ -90,10 +90,10 @@ fn manageStart(delta: *Delta) void {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.manage();
     }
-    // {
-    //     var it = list.safeIterator(Window, .link, &delta.windows);
-    //     while (it.next()) |window| window.manage();
-    // }
+    {
+        var it = list.safeIterator(Window, .link, &delta.windows);
+        while (it.next()) |window| window.manage();
+    }
 
     // TODO(ipc): snapshot + diff + publish goes here, after every mutation and
     // before the transaction closes.
