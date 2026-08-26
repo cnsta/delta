@@ -11,6 +11,7 @@ const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
 
 const Action = @import("input/action.zig").Action;
+const Eddy = @import("layouts/Eddy.zig");
 const Output = @import("Output.zig");
 const PointerBinding = @import("input/PointerBinding.zig");
 const Window = @import("Window.zig");
@@ -37,6 +38,7 @@ op_dy: i32 = 0,
 op_release: bool = false,
 
 shell: ?*river.LayerShellSeatV1 = null,
+
 layer_focus: LayerFocus = .none,
 
 pointer: geom.Point = geom.Point.zero,
@@ -45,20 +47,14 @@ pointer_known: bool = false,
 output: ?*Output = null,
 
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
+
 pub const Op = union(enum) {
     none,
-    move: struct {
-        window: *Window,
-        start_x: i32,
-        start_y: i32,
-    },
+    move: struct { window: *Window },
     resize: struct {
         window: *Window,
-        start_x: i32,
-        start_y: i32,
-        start_width: i32,
-        start_height: i32,
-        edges: river.WindowV1.Edges = .{},
+        applied_dx: i32 = 0,
+        applied_dy: i32 = 0,
     },
 };
 
@@ -194,27 +190,16 @@ fn dropFocus(seat: *Seat) void {
 pub fn pointerMove(seat: *Seat, window: *Window) void {
     seat.focus(window);
     seat.obj.opStartPointer();
-    seat.op = .{ .move = .{
-        .window = window,
-        .start_x = window.x,
-        .start_y = window.y,
-    } };
+    seat.op = .{ .move = .{ .window = window } };
     seat.op_dx = 0;
     seat.op_dy = 0;
 }
 
-pub fn pointerResize(seat: *Seat, window: *Window, edges: river.WindowV1.Edges) void {
+pub fn pointerResize(seat: *Seat, window: *Window) void {
     seat.focus(window);
     window.obj.informResizeStart();
     seat.obj.opStartPointer();
-    seat.op = .{ .resize = .{
-        .window = window,
-        .start_x = window.x,
-        .start_y = window.y,
-        .start_width = window.width,
-        .start_height = window.height,
-        .edges = edges,
-    } };
+    seat.op = .{ .resize = .{ .window = window } };
     seat.op_dx = 0;
     seat.op_dy = 0;
 }
@@ -238,12 +223,7 @@ pub fn startPointerMove(seat: *Seat) void {
 pub fn startPointerResize(seat: *Seat) void {
     if (seat.op != .none) return;
     const window = seat.hovered orelse return;
-    seat.pointerResize(window, .{
-        .top = false,
-        .left = false,
-        .right = true,
-        .bottom = true,
-    });
+    seat.pointerResize(window);
 }
 
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
@@ -288,8 +268,22 @@ fn endOp(seat: *Seat) void {
     seat.op = .none;
 }
 
+fn dropMove(seat: *Seat, window: *Window) void {
+    if (!seat.pointer_known) return;
+    const ws = window.workspace orelse return;
+    const origin = ws.origin() orelse return;
+
+    const point: geom.Point = .{
+        .x = seat.pointer.x - origin.x,
+        .y = seat.pointer.y - origin.y,
+    };
+    const other = ws.layout.windowAt(point) orelse return;
+    ws.layout.swap(window, other);
+}
+
 pub fn manage(seat: *Seat) void {
     seat.syncBindings(!wm.locked);
+
     seat.updateOutput();
 
     if (wm.locked) {
@@ -306,46 +300,31 @@ pub fn manage(seat: *Seat) void {
         .none => seat.focus(seat.interacted),
     }
     seat.interacted = null;
+
     seat.pending_action.execute(seat);
     seat.pending_action = .none;
 
-    switch (seat.op) {
-        .none => {},
-        .move => if (seat.op_release) seat.endOp(),
-        .resize => |args| {
-            const window = args.window;
-            if (seat.op_release) {
-                seat.endOp();
-            } else {
-                var width = args.start_width;
-                var height = args.start_height;
-                if (args.edges.left) width -= seat.op_dx;
-                if (args.edges.right) width += seat.op_dx;
-                if (args.edges.top) height -= seat.op_dy;
-                if (args.edges.bottom) height += seat.op_dy;
-                window.obj.proposeDimensions(@max(1, width), @max(1, height));
-            }
+    if (seat.op_release) {
+        switch (seat.op) {
+            .none => {},
+            .move => |args| seat.dropMove(args.window),
+            .resize => {},
+        }
+        seat.endOp();
+    } else switch (seat.op) {
+        .none, .move => {},
+        .resize => |*args| {
+            Eddy.resize(
+                args.window,
+                seat.op_dx - args.applied_dx,
+                seat.op_dy - args.applied_dy,
+            );
+            args.applied_dx = seat.op_dx;
+            args.applied_dy = seat.op_dy;
         },
     }
-    seat.op_release = false;
-}
 
-pub fn render(seat: *Seat) void {
-    switch (seat.op) {
-        .none => {},
-        .move => |args| args.window.setPosition(
-            args.start_x + seat.op_dx,
-            args.start_y + seat.op_dy,
-        ),
-        .resize => |args| {
-            const window = args.window;
-            var x = args.start_x;
-            var y = args.start_y;
-            if (args.edges.left) x += args.start_width - window.width;
-            if (args.edges.top) y += args.start_height - window.height;
-            window.setPosition(x, y);
-        },
-    }
+    seat.op_release = false;
 }
 
 /// Hardcoded for now.
