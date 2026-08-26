@@ -9,6 +9,9 @@ const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
 
+const Seat = @import("Seat.zig");
+const Workspace = @import("Workspace.zig");
+
 const Output = @This();
 
 obj: *river.OutputV1,
@@ -20,13 +23,20 @@ y: i32 = 0,
 width: i32 = 0,
 height: i32 = 0,
 
+workspace: *Workspace,
+
+previous: ?*Workspace = null,
+
 pub fn create(river_output: *river.OutputV1) void {
     const output = wm.gpa.create(Output) catch fatal("Out of memory.", .{});
+    const workspace = Workspace.firstUnmapped();
 
     output.* = .{
         .obj = river_output,
         .link = undefined,
+        .workspace = workspace,
     };
+    workspace.output = output;
 
     output.obj.setListener(*Output, listener, output);
     wm.outputs.append(output);
@@ -43,9 +53,27 @@ pub fn maybeDestroy(output: *Output) void {
     output.workspace.syncPositions();
     output.previous = null;
 
+    var seats = list.safeIterator(Seat, .link, &wm.seats);
+    while (seats.next()) |seat| seat.forgetOutput(output);
+
     output.obj.destroy();
     output.link.remove();
     wm.gpa.destroy(output);
+}
+
+pub fn setWorkspace(output: *Output, target: *Workspace) void {
+    std.debug.assert(target.output == null or target.output == output);
+    if (output.workspace == target) return;
+
+    const outgoing = output.workspace;
+    outgoing.output = null;
+    output.previous = outgoing;
+
+    output.workspace = target;
+    target.output = output;
+
+    outgoing.syncPositions();
+    target.syncPositions();
 }
 
 pub fn contains(output: *const Output, point: geom.Point) bool {
