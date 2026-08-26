@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2026 Vladyslav Khardel
+// SPDX-FileCopyrightText: © 2026 delta contributors
+// SPDX-License-Identifier: 0BSD
+
 const std = @import("std");
 const wayland = @import("wayland");
 
@@ -9,6 +13,8 @@ const wm = &@import("../Delta.zig").instance;
 
 const Action = @import("action.zig").Action;
 const Seat = @import("../Seat.zig");
+
+const log = std.log.scoped(.binding);
 
 const PointerBinding = @This();
 
@@ -44,6 +50,7 @@ pub fn setEnabled(binding: *PointerBinding, on: bool) void {
 
     if (on) binding.obj.enable() else binding.obj.disable();
     binding.enabled = on;
+    log.info("pointer binding {s}: {s}", .{ if (on) "enabled" else "disabled", @tagName(binding.action) });
 }
 
 pub fn destroy(binding: *PointerBinding) void {
@@ -54,7 +61,10 @@ pub fn destroy(binding: *PointerBinding) void {
 
 fn listener(_: *river.PointerBindingV1, event: river.PointerBindingV1.Event, binding: *PointerBinding) void {
     switch (event) {
-        .pressed => binding.seat.pending_action = binding.action,
+        .pressed => {
+            log.info("pointer binding pressed -> {s}", .{@tagName(binding.action)});
+            binding.seat.pending_action = binding.action;
+        },
         else => {},
     }
 }
