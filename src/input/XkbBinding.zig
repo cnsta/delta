@@ -18,6 +18,8 @@ seat: *Seat,
 action: Action = .none,
 link: wl.list.Link,
 
+enabled: bool = false,
+
 pub fn create(
     seat: *Seat,
     mods: river.SeatV1.Modifiers,
@@ -40,7 +42,13 @@ pub fn create(
     seat.xkb_bindings.append(binding);
 
     binding.obj.setListener(*XkbBinding, listener, binding);
-    binding.obj.enable();
+}
+
+pub fn setEnabled(binding: *XkbBinding, on: bool) void {
+    if (binding.enabled == on) return;
+
+    if (on) binding.obj.enable() else binding.obj.disable();
+    binding.enabled = on;
 }
 
 pub fn destroy(binding: *XkbBinding) void {
