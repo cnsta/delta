@@ -13,6 +13,7 @@ const geom = @import("util/geom.zig");
 const Action = @import("input/action.zig").Action;
 const Output = @import("Output.zig");
 const PointerBinding = @import("input/PointerBinding.zig");
+const Window = @import("Window.zig");
 const XkbBinding = @import("input/XkbBinding.zig");
 
 const Seat = @This();
@@ -26,6 +27,7 @@ xkb_bindings: wl.list.Head(XkbBinding, .link),
 pointer_bindings: wl.list.Head(PointerBinding, .link),
 pending_action: Action = .none,
 
+op: Op = .none,
 op_dx: i32 = 0,
 op_dy: i32 = 0,
 op_release: bool = false,
@@ -34,6 +36,23 @@ pointer: geom.Point = geom.Point.zero,
 pointer_known: bool = false,
 
 output: ?*Output = null,
+
+pub const Op = union(enum) {
+    none,
+    move: struct {
+        window: *Window,
+        start_x: i32,
+        start_y: i32,
+    },
+    resize: struct {
+        window: *Window,
+        start_x: i32,
+        start_y: i32,
+        start_width: i32,
+        start_height: i32,
+        edges: river.WindowV1.Edges = .{},
+    },
+};
 
 pub fn create(river_seat: *river.SeatV1) void {
     const seat = wm.gpa.create(Seat) catch fatal("Out of memory.", .{});
@@ -64,6 +83,20 @@ pub fn maybeDestroy(seat: *Seat) void {
     wm.gpa.destroy(seat);
 }
 
+pub fn forgetWindow(seat: *Seat, window: *Window) void {
+    if (seat.focused == window) seat.focused = null;
+    if (seat.hovered == window) seat.hovered = null;
+    if (seat.interacted == window) seat.interacted = null;
+
+    switch (seat.op) {
+        .none => {},
+        inline .move, .resize => |args| if (args.window == window) {
+            seat.obj.opEnd();
+            seat.op = .none;
+        },
+    }
+}
+
 fn updateOutput(seat: *Seat) void {
     if (seat.pointer_known) {
         if (Output.at(seat.pointer)) |o| {
@@ -88,6 +121,34 @@ fn updateOutput(seat: *Seat) void {
 
 pub fn forgetOutput(seat: *Seat, output_gone: *Output) void {
     if (seat.output == output_gone) seat.output = null;
+}
+
+pub fn pointerMove(seat: *Seat, window: *Window) void {
+    seat.focus(window);
+    seat.obj.opStartPointer();
+    seat.op = .{ .move = .{
+        .window = window,
+        .start_x = window.x,
+        .start_y = window.y,
+    } };
+    seat.op_dx = 0;
+    seat.op_dy = 0;
+}
+
+pub fn pointerResize(seat: *Seat, window: *Window, edges: river.WindowV1.Edges) void {
+    seat.focus(window);
+    window.obj.informResizeStart();
+    seat.obj.opStartPointer();
+    seat.op = .{ .resize = .{
+        .window = window,
+        .start_x = window.x,
+        .start_y = window.y,
+        .start_width = window.width,
+        .start_height = window.height,
+        .edges = edges,
+    } };
+    seat.op_dx = 0;
+    seat.op_dy = 0;
 }
 
 pub fn closeFocused(seat: *Seat) void {
@@ -199,7 +260,9 @@ fn setupDefaultBindings(seat: *Seat) void {
 fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
     switch (event) {
         .removed => seat.removed = true,
+        .pointer_enter => |args| seat.hovered = if (args.window) |w| Window.fromObj(w) else null,
         .pointer_leave => seat.hovered = null,
+        .window_interaction => |args| seat.interacted = if (args.window) |w| Window.fromObj(w) else null,
         .op_delta => |args| {
             seat.op_dx = args.dx;
             seat.op_dy = args.dy;
