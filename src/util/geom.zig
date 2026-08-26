@@ -13,3 +13,14 @@ pub const Size = struct {
     width: i32,
     height: i32,
 };
+
+pub const Rect = struct {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+
+    pub fn origin(r: Rect) Point {
+        return .{ .x = r.x, .y = r.y };
+    }
+};

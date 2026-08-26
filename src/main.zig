@@ -9,10 +9,12 @@ const Delta = @import("Delta.zig");
 
 const wm_version = 4;
 const xkb_bindings_version = 3;
+const layer_shell_version = 1;
 
 const Globals = struct {
     window_manager: ?*river.WindowManagerV1 = null,
     xkb_bindings: ?*river.XkbBindingsV1 = null,
+    layer_shell: ?*river.LayerShellV1 = null,
 };
 
 pub fn main(init: std.process.Init) !void {
@@ -32,7 +34,12 @@ pub fn main(init: std.process.Init) !void {
             fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
         globals.xkb_bindings orelse
             fatal("river_xkb_bindings_v1 not supported by the Wayland server.", .{}),
+        globals.layer_shell,
     );
+
+    if (globals.layer_shell == null) {
+        std.log.warn("river_layer_shell_v1 unavailable; layer surfaces will be closed", .{});
+    }
 
     while (true) {
         if (display.dispatch() != .SUCCESS) fatal("Dispatch failed.", .{});
@@ -54,6 +61,17 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
                 globals.window_manager = wm_obj;
 
                 wm_obj.setListener(?*anyopaque, Delta.listener, null);
+            } else if (std.mem.orderZ(u8, river.LayerShellV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_layer_shell_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, layer_shell_version,
+                });
+                if (ev.version >= layer_shell_version) {
+                    globals.layer_shell = registry.bind(
+                        ev.name,
+                        river.LayerShellV1,
+                        layer_shell_version,
+                    ) catch fatal("Out of memory.", .{});
+                }
             } else if (std.mem.orderZ(u8, river.XkbBindingsV1.interface.name, ev.interface) == .eq) {
                 std.log.info("river_xkb_bindings_v1 advertised v{d}, binding v{d}", .{
                     ev.version, xkb_bindings_version,
