@@ -244,6 +244,9 @@ pub fn manage(seat: *Seat) void {
     if (seat.new) {
         seat.new = false;
         seat.setupDefaultBindings();
+        std.log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
+            seat.xkb_bindings.length(), seat.pointer_bindings.length(),
+        });
     }
 
     seat.updateOutput();

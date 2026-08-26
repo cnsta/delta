@@ -34,6 +34,10 @@ pub fn main(init: std.process.Init) !void {
             fatal("river_xkb_bindings_v1 not supported by the Wayland server.", .{}),
     );
 
+    std.log.info("delta connected to river; wm v{d}, xkb-bindings v{d}", .{
+        wm_version, xkb_bindings_version,
+    });
+
     while (true) {
         if (display.dispatch() != .SUCCESS) fatal("Dispatch failed.", .{});
     }
