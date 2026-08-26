@@ -1,15 +1,15 @@
 const std = @import("std");
+
 const wm = &@import("../Delta.zig").instance;
 const geom = @import("../util/geom.zig");
-const Seat = @import("../Seat.zig");
+
 const Window = @import("../Window.zig");
-const Workspace = @import("../Workspace.zig");
+
+const Eddy = @This();
+
+root: ?Node = null,
 
 pub const gap = 4;
-
-const ratio_min = 0.05;
-const ratio_max = 0.95;
-
 pub const Split = enum { vertical, horizontal };
 
 pub const Node = union(enum) {
@@ -21,21 +21,26 @@ pub const Branch = struct {
     parent: ?*Branch = null,
     children: [2]Node,
     split: Split,
-
     ratio: f32 = 0.5,
-
     rect: geom.Rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
 };
 
-pub fn insert(ws: *Workspace, window: *Window, near: ?*Window, cursor: ?geom.Point) void {
+const ratio_min = 0.05;
+const ratio_max = 0.95;
+
+pub fn isEmpty(layout: *const Eddy) bool {
+    return layout.root == null;
+}
+
+pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Point) void {
     window.branch = null;
 
-    if (ws.root == null) {
-        ws.root = .{ .window = window };
+    const root = layout.root orelse {
+        layout.root = .{ .window = window };
         return;
-    }
+    };
 
-    const target = near orelse firstWindow(ws.root.?);
+    const target = near orelse firstWindow(root);
     if (target == window) return;
 
     const parent = target.branch;
@@ -68,15 +73,15 @@ pub fn insert(ws: *Workspace, window: *Window, near: ?*Window, cursor: ?geom.Poi
     if (parent) |p| {
         p.children[index] = .{ .branch = branch };
     } else {
-        ws.root = .{ .branch = branch };
+        layout.root = .{ .branch = branch };
     }
 }
 
-pub fn remove(ws: *Workspace, window: *Window) void {
+pub fn remove(layout: *Eddy, window: *Window) void {
     const parent = window.branch orelse {
-        if (ws.root) |root| switch (root) {
+        if (layout.root) |root| switch (root) {
             .window => |w| if (w == window) {
-                ws.root = null;
+                layout.root = null;
             },
             .branch => {},
         };
@@ -91,14 +96,14 @@ pub fn remove(ws: *Workspace, window: *Window) void {
     if (grandparent) |g| {
         g.children[indexOf(g, .{ .branch = parent })] = sibling;
     } else {
-        ws.root = sibling;
+        layout.root = sibling;
     }
 
     wm.gpa.destroy(parent);
     window.branch = null;
 }
 
-pub fn swap(ws: *Workspace, a: *Window, b: *Window) void {
+pub fn swap(layout: *Eddy, a: *Window, b: *Window) void {
     if (a == b) return;
 
     const pa = a.branch;
@@ -109,25 +114,25 @@ pub fn swap(ws: *Workspace, a: *Window, b: *Window) void {
     if (pa) |p| {
         p.children[ia] = .{ .window = b };
     } else {
-        ws.root = .{ .window = b };
+        layout.root = .{ .window = b };
     }
     if (pb) |p| {
         p.children[ib] = .{ .window = a };
     } else {
-        ws.root = .{ .window = a };
+        layout.root = .{ .window = a };
     }
 
     a.branch = pb;
     b.branch = pa;
 }
 
-pub fn arrange(ws: *Workspace, area: geom.Rect) void {
-    const root = ws.root orelse return;
+pub fn arrange(layout: *Eddy, area: geom.Rect) void {
+    const root = layout.root orelse return;
     place(root, area);
 }
 
-pub fn windowAt(ws: *Workspace, point: geom.Point) ?*Window {
-    var node = ws.root orelse return null;
+pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
+    var node = layout.root orelse return null;
     while (true) {
         switch (node) {
             .window => |w| return w,
@@ -154,26 +159,18 @@ pub fn resize(window: *Window, dx: i32, dy: i32) void {
     }
 }
 
-pub fn cursorIn(ws: *Workspace) ?geom.Point {
-    const origin = ws.origin() orelse return null;
-    const seat = wm.seats.first() orelse return null;
-    if (!seat.pointer_known) return null;
-
-    return .{
-        .x = seat.pointer.x - origin.x,
-        .y = seat.pointer.y - origin.y,
-    };
-}
-
 fn place(node: Node, rect: geom.Rect) void {
     switch (node) {
         .window => |w| {
             const inset = Window.border_width + gap;
-            w.setPosition(rect.x + inset, rect.y + inset);
-            w.obj.proposeDimensions(
-                @max(1, rect.width - 2 * inset),
-                @max(1, rect.height - 2 * inset),
-            );
+            w.slot = .{
+                .x = rect.x + inset,
+                .y = rect.y + inset,
+                .width = @max(1, rect.width - 2 * inset),
+                .height = @max(1, rect.height - 2 * inset),
+            };
+            w.setPosition(w.slot.x, w.slot.y);
+            w.obj.proposeDimensions(w.slot.width, w.slot.height);
         },
         .branch => |b| {
             b.rect = rect;
@@ -187,14 +184,14 @@ fn place(node: Node, rect: geom.Rect) void {
 fn subdivide(rect: geom.Rect, split: Split, ratio: f32) [2]geom.Rect {
     switch (split) {
         .vertical => {
-            const cut = @max(0, @min(rect.width, split_at(rect.width, ratio)));
+            const cut = std.math.clamp(scale(rect.width, ratio), 0, rect.width);
             return .{
                 .{ .x = rect.x, .y = rect.y, .width = cut, .height = rect.height },
                 .{ .x = rect.x + cut, .y = rect.y, .width = rect.width - cut, .height = rect.height },
             };
         },
         .horizontal => {
-            const cut = @max(0, @min(rect.height, split_at(rect.height, ratio)));
+            const cut = std.math.clamp(scale(rect.height, ratio), 0, rect.height);
             return .{
                 .{ .x = rect.x, .y = rect.y, .width = rect.width, .height = cut },
                 .{ .x = rect.x, .y = rect.y + cut, .width = rect.width, .height = rect.height - cut },
@@ -203,7 +200,7 @@ fn subdivide(rect: geom.Rect, split: Split, ratio: f32) [2]geom.Rect {
     }
 }
 
-fn split_at(extent: i32, ratio: f32) i32 {
+fn scale(extent: i32, ratio: f32) i32 {
     return @intFromFloat(@as(f32, @floatFromInt(extent)) * ratio);
 }
 
