@@ -7,7 +7,10 @@ const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
 const color = @import("util/color.zig");
+const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
+
+const Eddy = @import("layouts/Eddy.zig");
 
 const Seat = @import("Seat.zig");
 const Workspace = @import("Workspace.zig");
@@ -16,34 +19,29 @@ const Window = @This();
 
 obj: *river.WindowV1,
 node: *river.NodeV1,
-
 link: wl.list.Link,
 workspace_link: wl.list.Link,
-
 new: bool = true,
 closed: bool = false,
-
+branch: ?*Eddy.Branch = null,
+slot: geom.Rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
 focus_count: u8 = 0,
-
 decorated_focused: ?bool = null,
-
 parent: ?*Window = null,
-
 hidden: bool = false,
-
 workspace: ?*Workspace = null,
 
 x: i32 = 0,
 y: i32 = 0,
-width: i32,
-height: i32,
+width: i32 = 0,
+height: i32 = 0,
 
 pointer_request: PointerRequest = .none,
 
 pub const PointerRequest = union(enum) {
     none,
     move: struct { seat: *Seat },
-    resize: struct { seat: *Seat, edges: river.WindowV1.Edges },
+    resize: struct { seat: *Seat },
 };
 
 pub const border_width = 2;
@@ -64,8 +62,6 @@ pub fn create(river_window: *river.WindowV1) void {
         .node = river_window.getNode() catch fatal("Unable to obtain Window's Node.", .{}),
         .link = undefined,
         .workspace_link = undefined,
-        .width = undefined,
-        .height = undefined,
     };
     window.obj.setListener(*Window, listener, window);
     wm.windows.append(window);
@@ -86,7 +82,8 @@ pub fn maybeDestroy(window: *Window) void {
         if (other.parent == window) other.parent = null;
     }
 
-    if (window.workspace != null) {
+    if (window.workspace) |ws| {
+        ws.layout.remove(window);
         window.workspace_link.remove();
         window.workspace = null;
     }
@@ -106,9 +103,16 @@ fn initialWorkspace(window: *Window) *Workspace {
 pub fn setWorkspace(window: *Window, target: *Workspace) void {
     if (window.workspace == target) return;
 
-    if (window.workspace != null) window.workspace_link.remove();
+    if (window.workspace) |old| {
+        old.layout.remove(window);
+        window.workspace_link.remove();
+    }
+
+    const near = target.windows.last();
+
     window.workspace = target;
     target.windows.append(window);
+    target.layout.insert(window, near, target.cursor());
 }
 
 pub fn setPosition(window: *Window, x: i32, y: i32) void {
@@ -129,6 +133,20 @@ pub fn syncVisibility(window: *Window) void {
 
     if (want_hidden) window.obj.hide() else window.obj.show();
     window.hidden = want_hidden;
+}
+
+pub fn sized(window: *const Window) bool {
+    return window.width > 0 and window.height > 0;
+}
+
+pub fn center(window: *Window) void {
+    if (!window.sized()) return;
+    if (window.slot.width == 0) return;
+
+    window.setPosition(
+        window.slot.x + @divTrunc(window.slot.width - window.width, 2),
+        window.slot.y + @divTrunc(window.slot.height - window.height, 2),
+    );
 }
 
 pub fn focused(window: *const Window) bool {
@@ -166,14 +184,12 @@ pub fn manage(window: *Window) void {
         window.obj.useSsd();
 
         window.setWorkspace(window.initialWorkspace());
-        window.setPosition(0, 0);
-        window.obj.proposeDimensions(0, 0);
     }
 
     switch (window.pointer_request) {
         .none => {},
         .move => |args| if (window.visible()) args.seat.pointerMove(window),
-        .resize => |args| if (window.visible()) args.seat.pointerResize(window, args.edges),
+        .resize => |args| if (window.visible()) args.seat.pointerResize(window),
     }
     window.pointer_request = .none;
 
@@ -198,7 +214,6 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
         .pointer_resize_requested => |args| if (args.seat) |seat| {
             window.pointer_request = .{ .resize = .{
                 .seat = Seat.fromObj(seat),
-                .edges = args.edges,
             } };
         },
         else => {},
