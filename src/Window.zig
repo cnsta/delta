@@ -6,6 +6,7 @@ const wl = wayland.client.wl;
 const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
+const color = @import("util/color.zig");
 const list = @import("util/list.zig");
 
 const Seat = @import("Seat.zig");
@@ -22,6 +23,12 @@ workspace_link: wl.list.Link,
 new: bool = true,
 closed: bool = false,
 
+focus_count: u8 = 0,
+
+decorated_focused: ?bool = null,
+
+parent: ?*Window = null,
+
 hidden: bool = false,
 
 workspace: ?*Workspace = null,
@@ -37,6 +44,17 @@ pub const PointerRequest = union(enum) {
     none,
     move: struct { seat: *Seat },
     resize: struct { seat: *Seat, edges: river.WindowV1.Edges },
+};
+
+pub const border_width = 2;
+pub const border_focused = color.rgb(0x7a, 0xa2, 0xf7);
+pub const border_inactive = color.rgb(0x41, 0x48, 0x68);
+
+pub const capabilities: river.WindowV1.Capabilities = .{
+    .window_menu = false,
+    .maximize = false,
+    .minimize = false,
+    .fullscreen = false,
 };
 
 pub fn create(river_window: *river.WindowV1) void {
@@ -63,6 +81,11 @@ pub fn maybeDestroy(window: *Window) void {
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetWindow(window);
 
+    var others = list.safeIterator(Window, .link, &wm.windows);
+    while (others.next()) |other| {
+        if (other.parent == window) other.parent = null;
+    }
+
     if (window.workspace != null) {
         window.workspace_link.remove();
         window.workspace = null;
@@ -71,6 +94,13 @@ pub fn maybeDestroy(window: *Window) void {
     window.obj.destroy();
     window.link.remove();
     wm.gpa.destroy(window);
+}
+
+fn initialWorkspace(window: *Window) *Workspace {
+    if (window.parent) |parent| {
+        if (parent.workspace) |ws| return ws;
+    }
+    return Workspace.forNewWindow();
 }
 
 pub fn setWorkspace(window: *Window, target: *Workspace) void {
@@ -101,6 +131,28 @@ pub fn syncVisibility(window: *Window) void {
     window.hidden = want_hidden;
 }
 
+pub fn focused(window: *const Window) bool {
+    return window.focus_count > 0;
+}
+
+pub fn syncDecoration(window: *Window) void {
+    const is_focused = window.focused();
+    if (window.decorated_focused) |applied| {
+        if (applied == is_focused) return;
+    }
+
+    const c = if (is_focused) border_focused else border_inactive;
+    window.obj.setBorders(
+        .{ .top = true, .bottom = true, .left = true, .right = true },
+        border_width,
+        c.r,
+        c.g,
+        c.b,
+        c.a,
+    );
+    window.decorated_focused = is_focused;
+}
+
 pub fn visible(window: *const Window) bool {
     const ws = window.workspace orelse return false;
     return ws.visible();
@@ -109,7 +161,11 @@ pub fn visible(window: *const Window) bool {
 pub fn manage(window: *Window) void {
     if (window.new) {
         window.new = false;
-        window.setWorkspace(Workspace.forNewWindow());
+
+        window.obj.setCapabilities(capabilities);
+        window.obj.useSsd();
+
+        window.setWorkspace(window.initialWorkspace());
         window.setPosition(0, 0);
         window.obj.proposeDimensions(0, 0);
     }
@@ -121,6 +177,7 @@ pub fn manage(window: *Window) void {
     }
     window.pointer_request = .none;
 
+    window.syncDecoration();
     window.syncVisibility();
     window.syncPosition();
 }
@@ -132,6 +189,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
             window.width = args.width;
             window.height = args.height;
         },
+        .parent => |args| window.parent = if (args.parent) |p| fromObj(p) else null,
         .pointer_move_requested => |args| if (args.seat) |seat| {
             window.pointer_request = .{ .move = .{
                 .seat = Seat.fromObj(seat),
