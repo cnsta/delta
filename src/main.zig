@@ -34,10 +34,6 @@ pub fn main(init: std.process.Init) !void {
             fatal("river_xkb_bindings_v1 not supported by the Wayland server.", .{}),
     );
 
-    std.log.info("delta connected to river; wm v{d}, xkb-bindings v{d}", .{
-        wm_version, xkb_bindings_version,
-    });
-
     while (true) {
         if (display.dispatch() != .SUCCESS) fatal("Dispatch failed.", .{});
     }
@@ -47,6 +43,9 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
     switch (event) {
         .global => |ev| {
             if (std.mem.orderZ(u8, river.WindowManagerV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_window_manager_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, wm_version,
+                });
                 if (ev.version < wm_version) {
                     fatal("Expected river wm version to be at least {d}.", .{wm_version});
                 }
@@ -56,6 +55,12 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
 
                 wm_obj.setListener(?*anyopaque, Delta.listener, null);
             } else if (std.mem.orderZ(u8, river.XkbBindingsV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_xkb_bindings_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, xkb_bindings_version,
+                });
+                if (ev.version < xkb_bindings_version) {
+                    fatal("Expected river_xkb_bindings_v1 to be at least v{d}.", .{xkb_bindings_version});
+                }
                 globals.xkb_bindings = registry.bind(
                     ev.name,
                     river.XkbBindingsV1,
