@@ -14,6 +14,7 @@ const Action = @import("input/action.zig").Action;
 const Output = @import("Output.zig");
 const PointerBinding = @import("input/PointerBinding.zig");
 const Window = @import("Window.zig");
+const Workspace = @import("Workspace.zig");
 const XkbBinding = @import("input/XkbBinding.zig");
 
 const Seat = @This();
@@ -22,6 +23,10 @@ obj: *river.SeatV1,
 new: bool = true,
 removed: bool = false,
 link: wl.list.Link,
+
+focused: ?*Window = null,
+hovered: ?*Window = null,
+interacted: ?*Window = null,
 
 xkb_bindings: wl.list.Head(XkbBinding, .link),
 pointer_bindings: wl.list.Head(PointerBinding, .link),
@@ -123,6 +128,40 @@ pub fn forgetOutput(seat: *Seat, output_gone: *Output) void {
     if (seat.output == output_gone) seat.output = null;
 }
 
+pub fn workspace(seat: *Seat) ?*Workspace {
+    if (seat.focused) |w| {
+        if (w.workspace) |ws| return ws;
+    }
+    const o = seat.output orelse return null;
+    return o.workspace;
+}
+
+pub fn focus(seat: *Seat, window: ?*Window) void {
+    const target = window orelse blk: {
+        const ws = seat.workspace() orelse break :blk null;
+        break :blk ws.windows.last();
+    };
+
+    if (seat.focused == target) return;
+
+    if (target) |w| {
+        seat.obj.focusWindow(w.obj);
+        w.node.placeTop();
+
+        w.link.remove();
+        wm.windows.append(w);
+
+        if (w.workspace) |ws| {
+            w.workspace_link.remove();
+            ws.windows.append(w);
+        }
+    } else {
+        seat.obj.clearFocus();
+    }
+
+    seat.focused = target;
+}
+
 pub fn pointerMove(seat: *Seat, window: *Window) void {
     seat.focus(window);
     seat.obj.opStartPointer();
@@ -176,6 +215,29 @@ pub fn startPointerResize(seat: *Seat) void {
         .right = true,
         .bottom = true,
     });
+}
+
+pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
+    const target = Workspace.get(id);
+
+    if (target.output == null) {
+        const o = seat.output orelse return;
+        o.setWorkspace(target);
+    }
+
+    seat.focused = null;
+    seat.focus(target.windows.last());
+}
+
+pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
+    const window = seat.focused orelse return;
+    const target = Workspace.get(id);
+    if (window.workspace == target) return;
+
+    window.setWorkspace(target);
+
+    seat.focused = null;
+    seat.focus(null);
 }
 
 pub fn manage(seat: *Seat) void {
