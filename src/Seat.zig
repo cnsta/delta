@@ -20,7 +20,6 @@ const XkbBinding = @import("input/XkbBinding.zig");
 const Seat = @This();
 
 obj: *river.SeatV1,
-new: bool = true,
 removed: bool = false,
 link: wl.list.Link,
 
@@ -71,6 +70,10 @@ pub fn create(river_seat: *river.SeatV1) void {
     seat.pointer_bindings.init();
     seat.obj.setListener(*Seat, listener, seat);
     wm.seats.append(seat);
+    seat.setupDefaultBindings();
+    std.log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
+        seat.xkb_bindings.length(), seat.pointer_bindings.length(),
+    });
 }
 
 pub fn fromObj(obj: *river.SeatV1) *Seat {
@@ -89,7 +92,10 @@ pub fn maybeDestroy(seat: *Seat) void {
 }
 
 pub fn forgetWindow(seat: *Seat, window: *Window) void {
-    if (seat.focused == window) seat.focused = null;
+    if (seat.focused == window) {
+        window.focus_count -= 1;
+        seat.focused = null;
+    }
     if (seat.hovered == window) seat.hovered = null;
     if (seat.interacted == window) seat.interacted = null;
 
@@ -144,6 +150,8 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
 
     if (seat.focused == target) return;
 
+    if (seat.focused) |old| old.focus_count -= 1;
+
     if (target) |w| {
         seat.obj.focusWindow(w.obj);
         w.node.placeTop();
@@ -155,6 +163,8 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
             w.workspace_link.remove();
             ws.windows.append(w);
         }
+
+        w.focus_count += 1;
     } else {
         seat.obj.clearFocus();
     }
@@ -240,16 +250,38 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     seat.focus(null);
 }
 
-pub fn manage(seat: *Seat) void {
-    if (seat.new) {
-        seat.new = false;
-        seat.setupDefaultBindings();
-        std.log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
-            seat.xkb_bindings.length(), seat.pointer_bindings.length(),
-        });
+fn syncBindings(seat: *Seat, on: bool) void {
+    var keys = seat.xkb_bindings.iterator(.forward);
+    while (keys.next()) |binding| binding.setEnabled(on);
+
+    var buttons = seat.pointer_bindings.iterator(.forward);
+    while (buttons.next()) |binding| binding.setEnabled(on);
+}
+
+fn endOp(seat: *Seat) void {
+    switch (seat.op) {
+        .none => return,
+        .move => {},
+        .resize => |args| args.window.obj.informResizeEnd(),
     }
 
+    seat.obj.opEnd();
+    seat.op = .none;
+}
+
+pub fn manage(seat: *Seat) void {
+    seat.syncBindings(!wm.locked);
+
     seat.updateOutput();
+
+    if (wm.locked) {
+        seat.endOp();
+
+        seat.interacted = null;
+        seat.pending_action = .none;
+        seat.op_release = false;
+        return;
+    }
 
     seat.focus(seat.interacted);
     seat.interacted = null;
@@ -259,16 +291,11 @@ pub fn manage(seat: *Seat) void {
 
     switch (seat.op) {
         .none => {},
-        .move => if (seat.op_release) {
-            seat.obj.opEnd();
-            seat.op = .none;
-        },
+        .move => if (seat.op_release) seat.endOp(),
         .resize => |args| {
             const window = args.window;
             if (seat.op_release) {
-                window.obj.informResizeEnd();
-                seat.obj.opEnd();
-                seat.op = .none;
+                seat.endOp();
             } else {
                 var width = args.start_width;
                 var height = args.start_height;
@@ -306,6 +333,8 @@ pub fn render(seat: *Seat) void {
 fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
+
+    XkbBinding.create(seat, .{}, @enumFromInt(0xffc9), .{ .spawn = &.{"foot"} });
 
     XkbBinding.create(seat, super, .space, .{ .spawn = &.{"foot"} });
     XkbBinding.create(seat, super, .q, .close);
