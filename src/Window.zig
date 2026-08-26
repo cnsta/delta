@@ -22,6 +22,8 @@ workspace_link: wl.list.Link,
 new: bool = true,
 closed: bool = false,
 
+hidden: bool = false,
+
 workspace: ?*Workspace = null,
 
 x: i32 = 0,
@@ -77,8 +79,6 @@ pub fn setWorkspace(window: *Window, target: *Workspace) void {
     if (window.workspace != null) window.workspace_link.remove();
     window.workspace = target;
     target.windows.append(window);
-
-    window.syncPosition();
 }
 
 pub fn setPosition(window: *Window, x: i32, y: i32) void {
@@ -88,8 +88,17 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
 }
 
 pub fn syncPosition(window: *Window) void {
-    const origin = if (window.workspace) |ws| ws.origin() else Workspace.offscreen;
+    const ws = window.workspace orelse return;
+    const origin = ws.origin() orelse return;
     window.node.setPosition(origin.x + window.x, origin.y + window.y);
+}
+
+pub fn syncVisibility(window: *Window) void {
+    const want_hidden = !window.visible();
+    if (want_hidden == window.hidden) return;
+
+    if (want_hidden) window.obj.hide() else window.obj.show();
+    window.hidden = want_hidden;
 }
 
 pub fn visible(window: *const Window) bool {
@@ -111,6 +120,9 @@ pub fn manage(window: *Window) void {
         .resize => |args| if (window.visible()) args.seat.pointerResize(window, args.edges),
     }
     window.pointer_request = .none;
+
+    window.syncVisibility();
+    window.syncPosition();
 }
 
 fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) void {
