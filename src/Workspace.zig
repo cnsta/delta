@@ -7,6 +7,7 @@ const fatal = std.process.fatal;
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
 
+const Eddy = @import("layouts/Eddy.zig");
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
@@ -22,6 +23,8 @@ link: wl.list.Link,
 output: ?*Output = null,
 
 windows: wl.list.Head(Window, .workspace_link),
+
+layout: Eddy = .{},
 
 pub fn get(id: Id) *Workspace {
     var it = wm.workspaces.iterator(.forward);
@@ -57,12 +60,25 @@ pub fn maybeDestroy(ws: *Workspace) void {
     if (ws.output != null) return;
     if (!ws.isEmpty()) return;
 
+    std.debug.assert(ws.layout.isEmpty());
+
     ws.link.remove();
     wm.gpa.destroy(ws);
 }
 
 pub fn isEmpty(ws: *const Workspace) bool {
     return ws.windows.empty();
+}
+
+pub fn cursor(ws: *Workspace) ?geom.Point {
+    const origin = ws.origin() orelse return null;
+    const seat = wm.seats.first() orelse return null;
+    if (!seat.pointer_known) return null;
+
+    return .{
+        .x = seat.pointer.x - origin.x,
+        .y = seat.pointer.y - origin.y,
+    };
 }
 
 pub fn visible(ws: *const Workspace) bool {
