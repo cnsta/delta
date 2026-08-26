@@ -331,6 +331,11 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         },
         .op_release => seat.op_release = true,
 
+        .pointer_position => |args| {
+            seat.pointer = .{ .x = args.x, .y = args.y };
+            seat.pointer_known = true;
+        },
+
         else => {},
     }
 }
