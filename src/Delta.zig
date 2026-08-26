@@ -73,7 +73,7 @@ pub fn listener(
         .window => |ev| Window.create(ev.id),
         .output => |ev| Output.create(ev.id),
         .seat => |ev| Seat.create(ev.id),
-        else => {},
+        // else => {},
     }
 }
 
