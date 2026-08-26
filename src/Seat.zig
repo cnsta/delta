@@ -36,11 +36,15 @@ op_dx: i32 = 0,
 op_dy: i32 = 0,
 op_release: bool = false,
 
+shell: ?*river.LayerShellSeatV1 = null,
+layer_focus: LayerFocus = .none,
+
 pointer: geom.Point = geom.Point.zero,
 pointer_known: bool = false,
 
 output: ?*Output = null,
 
+pub const LayerFocus = enum { none, non_exclusive, exclusive };
 pub const Op = union(enum) {
     none,
     move: struct {
@@ -70,6 +74,13 @@ pub fn create(river_seat: *river.SeatV1) void {
     seat.pointer_bindings.init();
     seat.obj.setListener(*Seat, listener, seat);
     wm.seats.append(seat);
+
+    if (wm.layer_shell) |layer_shell| {
+        const shell = layer_shell.getSeat(river_seat) catch fatal("Out of memory.", .{});
+        seat.shell = shell;
+        shell.setListener(*Seat, shellListener, seat);
+    }
+
     seat.setupDefaultBindings();
     std.log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
         seat.xkb_bindings.length(), seat.pointer_bindings.length(),
@@ -85,6 +96,8 @@ pub fn maybeDestroy(seat: *Seat) void {
 
     while (seat.xkb_bindings.first()) |binding| binding.destroy();
     while (seat.pointer_bindings.first()) |binding| binding.destroy();
+
+    if (seat.shell) |shell| shell.destroy();
 
     seat.obj.destroy();
     seat.link.remove();
@@ -170,6 +183,12 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
     }
 
     seat.focused = target;
+}
+
+fn dropFocus(seat: *Seat) void {
+    const old = seat.focused orelse return;
+    old.focus_count -= 1;
+    seat.focused = null;
 }
 
 pub fn pointerMove(seat: *Seat, window: *Window) void {
@@ -271,21 +290,22 @@ fn endOp(seat: *Seat) void {
 
 pub fn manage(seat: *Seat) void {
     seat.syncBindings(!wm.locked);
-
     seat.updateOutput();
 
     if (wm.locked) {
         seat.endOp();
-
         seat.interacted = null;
         seat.pending_action = .none;
         seat.op_release = false;
         return;
     }
 
-    seat.focus(seat.interacted);
+    switch (seat.layer_focus) {
+        .exclusive => seat.dropFocus(),
+        .non_exclusive => if (seat.interacted) |w| seat.focus(w) else seat.dropFocus(),
+        .none => seat.focus(seat.interacted),
+    }
     seat.interacted = null;
-
     seat.pending_action.execute(seat);
     seat.pending_action = .none;
 
@@ -307,7 +327,6 @@ pub fn manage(seat: *Seat) void {
             }
         },
     }
-
     seat.op_release = false;
 }
 
@@ -347,6 +366,18 @@ fn setupDefaultBindings(seat: *Seat) void {
 
     PointerBinding.create(seat, super, event_codes.BTN_LEFT, .move);
     PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .resize);
+}
+
+fn shellListener(
+    _: *river.LayerShellSeatV1,
+    event: river.LayerShellSeatV1.Event,
+    seat: *Seat,
+) void {
+    switch (event) {
+        .focus_exclusive => seat.layer_focus = .exclusive,
+        .focus_non_exclusive => seat.layer_focus = .non_exclusive,
+        .focus_none => seat.layer_focus = .none,
+    }
 }
 
 fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
