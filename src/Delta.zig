@@ -20,11 +20,14 @@ io: std.Io,
 
 obj: *river.WindowManagerV1,
 xkb_bindings: *river.XkbBindingsV1,
+layer_shell: ?*river.LayerShellV1,
 
 outputs: wl.list.Head(Output, .link),
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 workspaces: wl.list.Head(Workspace, .link),
+
+default_output: ?*Output = null,
 
 locked: bool = false,
 
@@ -33,6 +36,7 @@ pub fn init(
     io: std.Io,
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
+    layer_shell_obj: ?*river.LayerShellV1,
 ) void {
     instance = .{
         .gpa = gpa,
@@ -40,6 +44,7 @@ pub fn init(
 
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
+        .layer_shell = layer_shell_obj,
 
         .outputs = undefined,
         .windows = undefined,
@@ -99,10 +104,22 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |window| window.manage();
     }
 
+    delta.syncLayerShellDefault();
+
     // TODO(ipc): snapshot + diff + publish goes here, after every mutation and
     // before the transaction closes.
 
     delta.obj.manageFinish();
+}
+
+fn syncLayerShellDefault(delta: *Delta) void {
+    const seat = delta.seats.first() orelse return;
+    const output = seat.output orelse return;
+    if (delta.default_output == output) return;
+
+    const shell = output.shell orelse return;
+    shell.setDefault();
+    delta.default_output = output;
 }
 
 fn renderStart(delta: *Delta) void {

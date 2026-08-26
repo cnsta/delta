@@ -24,7 +24,8 @@ width: i32 = 0,
 height: i32 = 0,
 
 workspace: *Workspace,
-
+shell: ?*river.LayerShellOutputV1 = null,
+usable: ?geom.Rect = null,
 previous: ?*Workspace = null,
 
 pub fn create(river_output: *river.OutputV1) void {
@@ -40,6 +41,12 @@ pub fn create(river_output: *river.OutputV1) void {
 
     output.obj.setListener(*Output, listener, output);
     wm.outputs.append(output);
+
+    if (wm.layer_shell) |layer_shell| {
+        const shell = layer_shell.getOutput(river_output) catch fatal("Out of memory.", .{});
+        output.shell = shell;
+        shell.setListener(*Output, shellListener, output);
+    }
 }
 
 pub fn fromObj(obj: *river.OutputV1) *Output {
@@ -54,6 +61,10 @@ pub fn maybeDestroy(output: *Output) void {
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetOutput(output);
+
+    if (wm.default_output == output) wm.default_output = null;
+
+    if (output.shell) |shell| shell.destroy();
 
     output.obj.destroy();
     output.link.remove();
@@ -70,6 +81,30 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
     output.workspace = target;
     target.output = output;
+}
+
+pub fn usableArea(output: *const Output) geom.Rect {
+    return output.usable orelse .{
+        .x = output.x,
+        .y = output.y,
+        .width = output.width,
+        .height = output.height,
+    };
+}
+
+fn shellListener(
+    _: *river.LayerShellOutputV1,
+    event: river.LayerShellOutputV1.Event,
+    output: *Output,
+) void {
+    switch (event) {
+        .non_exclusive_area => |args| output.usable = .{
+            .x = args.x,
+            .y = args.y,
+            .width = args.width,
+            .height = args.height,
+        },
+    }
 }
 
 pub fn contains(output: *const Output, point: geom.Point) bool {
