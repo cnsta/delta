@@ -1,0 +1,211 @@
+const std = @import("std");
+const wayland = @import("wayland");
+const xkb = @import("xkbcommon");
+const event_codes = @import("event-codes");
+
+const river = wayland.client.river;
+const wl = wayland.client.wl;
+const fatal = std.process.fatal;
+
+const wm = &@import("Delta.zig").instance;
+const geom = @import("util/geom.zig");
+
+const Action = @import("input/action.zig").Action;
+const Output = @import("Output.zig");
+const PointerBinding = @import("input/PointerBinding.zig");
+const XkbBinding = @import("input/XkbBinding.zig");
+
+const Seat = @This();
+
+obj: *river.SeatV1,
+new: bool = true,
+removed: bool = false,
+link: wl.list.Link,
+
+xkb_bindings: wl.list.Head(XkbBinding, .link),
+pointer_bindings: wl.list.Head(PointerBinding, .link),
+pending_action: Action = .none,
+
+op_dx: i32 = 0,
+op_dy: i32 = 0,
+op_release: bool = false,
+
+pointer: geom.Point = geom.Point.zero,
+pointer_known: bool = false,
+
+output: ?*Output = null,
+
+pub fn create(river_seat: *river.SeatV1) void {
+    const seat = wm.gpa.create(Seat) catch fatal("Out of memory.", .{});
+    seat.* = .{
+        .obj = river_seat,
+        .link = undefined,
+        .xkb_bindings = undefined,
+        .pointer_bindings = undefined,
+    };
+    seat.xkb_bindings.init();
+    seat.pointer_bindings.init();
+    seat.obj.setListener(*Seat, listener, seat);
+    wm.seats.append(seat);
+}
+
+pub fn fromObj(obj: *river.SeatV1) *Seat {
+    return @ptrCast(@alignCast(obj.getUserData()));
+}
+
+pub fn maybeDestroy(seat: *Seat) void {
+    if (!seat.removed) return;
+
+    while (seat.xkb_bindings.first()) |binding| binding.destroy();
+    while (seat.pointer_bindings.first()) |binding| binding.destroy();
+
+    seat.obj.destroy();
+    seat.link.remove();
+    wm.gpa.destroy(seat);
+}
+
+fn updateOutput(seat: *Seat) void {
+    if (seat.pointer_known) {
+        if (Output.at(seat.pointer)) |o| {
+            seat.output = o;
+            return;
+        }
+    }
+
+    if (seat.focused) |w| {
+        if (w.workspace) |ws| {
+            if (ws.output) |o| {
+                seat.output = o;
+                return;
+            }
+        }
+    }
+
+    if (seat.output != null) return;
+
+    seat.output = wm.outputs.first();
+}
+
+pub fn forgetOutput(seat: *Seat, output_gone: *Output) void {
+    if (seat.output == output_gone) seat.output = null;
+}
+
+pub fn closeFocused(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    window.obj.close();
+}
+
+pub fn focusNext(seat: *Seat) void {
+    const ws = seat.workspace() orelse return;
+    seat.focus(ws.windows.first());
+}
+
+pub fn startPointerMove(seat: *Seat) void {
+    if (seat.op != .none) return;
+    const window = seat.hovered orelse return;
+    seat.pointerMove(window);
+}
+
+pub fn startPointerResize(seat: *Seat) void {
+    if (seat.op != .none) return;
+    const window = seat.hovered orelse return;
+    seat.pointerResize(window, .{
+        .top = false,
+        .left = false,
+        .right = true,
+        .bottom = true,
+    });
+}
+
+pub fn manage(seat: *Seat) void {
+    if (seat.new) {
+        seat.new = false;
+        seat.setupDefaultBindings();
+    }
+
+    seat.updateOutput();
+
+    seat.focus(seat.interacted);
+    seat.interacted = null;
+
+    seat.pending_action.execute(seat);
+    seat.pending_action = .none;
+
+    switch (seat.op) {
+        .none => {},
+        .move => if (seat.op_release) {
+            seat.obj.opEnd();
+            seat.op = .none;
+        },
+        .resize => |args| {
+            const window = args.window;
+            if (seat.op_release) {
+                window.obj.informResizeEnd();
+                seat.obj.opEnd();
+                seat.op = .none;
+            } else {
+                var width = args.start_width;
+                var height = args.start_height;
+                if (args.edges.left) width -= seat.op_dx;
+                if (args.edges.right) width += seat.op_dx;
+                if (args.edges.top) height -= seat.op_dy;
+                if (args.edges.bottom) height += seat.op_dy;
+                window.obj.proposeDimensions(@max(1, width), @max(1, height));
+            }
+        },
+    }
+
+    seat.op_release = false;
+}
+
+pub fn render(seat: *Seat) void {
+    switch (seat.op) {
+        .none => {},
+        .move => |args| args.window.setPosition(
+            args.start_x + seat.op_dx,
+            args.start_y + seat.op_dy,
+        ),
+        .resize => |args| {
+            const window = args.window;
+            var x = args.start_x;
+            var y = args.start_y;
+            if (args.edges.left) x += args.start_width - window.width;
+            if (args.edges.top) y += args.start_height - window.height;
+            window.setPosition(x, y);
+        },
+    }
+}
+
+/// Hardcoded for now.
+fn setupDefaultBindings(seat: *Seat) void {
+    const super: river.SeatV1.Modifiers = .{ .mod4 = true };
+    const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
+
+    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"foot"} });
+    XkbBinding.create(seat, super, .q, .close);
+    XkbBinding.create(seat, super, .n, .focus_next);
+    XkbBinding.create(seat, super, .Escape, .exit);
+
+    inline for (1..10) |n| {
+        const keysym: xkb.Keysym = @enumFromInt('0' + n);
+        XkbBinding.create(seat, super, keysym, .{ .focus_workspace = n });
+        XkbBinding.create(seat, super_shift, keysym, .{ .send_to_workspace = n });
+    }
+
+    PointerBinding.create(seat, super, event_codes.BTN_LEFT, .move);
+    PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .resize);
+}
+
+fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
+    switch (event) {
+        .removed => seat.removed = true,
+        .pointer_leave => seat.hovered = null,
+        .op_delta => |args| {
+            seat.op_dx = args.dx;
+            seat.op_dy = args.dy;
+        },
+        .op_release => seat.op_release = true,
+
+        else => {},
+    }
+}
