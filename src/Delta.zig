@@ -9,7 +9,7 @@ const list = @import("util/list.zig");
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
-// const Workspace = @import("Workspace.zig");
+const Workspace = @import("Workspace.zig");
 
 const Delta = @This();
 
@@ -24,7 +24,7 @@ xkb_bindings: *river.XkbBindingsV1,
 outputs: wl.list.Head(Output, .link),
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
-// workspaces: wl.list.Head(Workspace, .link),
+workspaces: wl.list.Head(Workspace, .link),
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -81,10 +81,10 @@ fn manageStart(delta: *Delta) void {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.maybeDestroy();
     }
-    // {
-    //     var it = list.safeIterator(Workspace, .link, &delta.workspaces);
-    //     while (it.next()) |workspace| workspace.maybeDestroy();
-    // }
+    {
+        var it = list.safeIterator(Workspace, .link, &delta.workspaces);
+        while (it.next()) |workspace| workspace.maybeDestroy();
+    }
 
     {
         var it = list.safeIterator(Seat, .link, &delta.seats);
