@@ -15,8 +15,6 @@ const Workspace = @This();
 
 pub const Id = u32;
 
-pub const offscreen: geom.Point = .{ .x = -1_000_000, .y = -1_000_000 };
-
 id: Id,
 
 link: wl.list.Link,
@@ -71,14 +69,9 @@ pub fn visible(ws: *const Workspace) bool {
     return ws.output != null;
 }
 
-pub fn origin(ws: *const Workspace) geom.Point {
-    const output = ws.output orelse return offscreen;
+pub fn origin(ws: *const Workspace) ?geom.Point {
+    const output = ws.output orelse return null;
     return .{ .x = output.x, .y = output.y };
-}
-
-pub fn syncPositions(ws: *Workspace) void {
-    var it = ws.windows.iterator(.forward);
-    while (it.next()) |window| window.syncPosition();
 }
 
 fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
