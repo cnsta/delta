@@ -35,6 +35,8 @@ pub const Action = union(enum) {
 
 fn spawn(argv: []const []const u8) void {
     std.debug.assert(argv.len > 0);
+
+    log.info("spawning {s}", .{argv[0]});
     _ = std.process.spawn(wm.io, .{ .argv = argv }) catch |err| {
         log.err("failed to spawn {s}: {s}", .{ argv[0], @errorName(err) });
     };
