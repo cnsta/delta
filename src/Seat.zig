@@ -334,8 +334,6 @@ fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
 
-    XkbBinding.create(seat, .{}, @enumFromInt(0xffc9), .{ .spawn = &.{"foot"} });
-
     XkbBinding.create(seat, super, .space, .{ .spawn = &.{"foot"} });
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .n, .focus_next);
