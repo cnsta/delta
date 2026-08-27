@@ -10,6 +10,7 @@ const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
 
 const Seat = @import("Seat.zig");
+const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
 
 const Output = @This();
@@ -61,6 +62,17 @@ pub fn maybeDestroy(output: *Output) void {
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetOutput(output);
+
+    var windows = list.safeIterator(Window, .link, &wm.windows);
+    while (windows.next()) |window| {
+        if (window.fullscreen != output and window.fullscreen_applied != output) continue;
+
+        window.obj.informNotFullscreen();
+        window.fullscreen = null;
+        window.fullscreen_applied = null;
+        window.slot = .{ .x = 0, .y = 0, .width = 0, .height = 0 };
+        window.placed = null;
+    }
 
     if (wm.default_output == output) wm.default_output = null;
 

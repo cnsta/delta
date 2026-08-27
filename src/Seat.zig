@@ -189,6 +189,8 @@ fn dropFocus(seat: *Seat) void {
 }
 
 pub fn pointerMove(seat: *Seat, window: *Window) void {
+    if (seat.op != .none) return;
+
     seat.focus(window);
     seat.obj.opStartPointer();
     seat.op = .{ .move = .{ .window = window } };
@@ -197,8 +199,9 @@ pub fn pointerMove(seat: *Seat, window: *Window) void {
 }
 
 pub fn pointerResize(seat: *Seat, window: *Window) void {
+    if (seat.op != .none) return;
+
     seat.focus(window);
-    window.obj.informResizeStart();
     seat.obj.opStartPointer();
     seat.op = .{ .resize = .{ .window = window } };
     seat.op_dx = 0;
@@ -225,8 +228,15 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     if (ws.windowInDirection(window, dir)) |target| seat.focus(target);
 }
 
+pub fn toggleFullscreen(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    window.toggleFullscreen();
+}
+
 pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
     const window = seat.focused orelse return;
+
+    if (window.fullscreen != null) return;
     const step = rules.resize_step;
 
     switch (how) {
@@ -238,13 +248,11 @@ pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
 }
 
 pub fn startPointerMove(seat: *Seat) void {
-    if (seat.op != .none) return;
     const window = seat.hovered orelse return;
     seat.pointerMove(window);
 }
 
 pub fn startPointerResize(seat: *Seat) void {
-    if (seat.op != .none) return;
     const window = seat.hovered orelse return;
     seat.pointerResize(window);
 }
@@ -281,11 +289,7 @@ fn syncBindings(seat: *Seat, on: bool) void {
 }
 
 fn endOp(seat: *Seat) void {
-    switch (seat.op) {
-        .none => return,
-        .move => {},
-        .resize => |args| args.window.obj.informResizeEnd(),
-    }
+    if (seat.op == .none) return;
 
     seat.obj.opEnd();
     seat.op = .none;
@@ -364,6 +368,7 @@ fn setupDefaultBindings(seat: *Seat) void {
     XkbBinding.create(seat, super, .i, .{ .spawn = &.{"byt"} });
 
     XkbBinding.create(seat, super, .q, .close);
+    XkbBinding.create(seat, super, .f, .toggle_fullscreen);
     XkbBinding.create(seat, super, .n, .focus_next);
 
     const arrows = [4]u32{ 0xff51, 0xff53, 0xff52, 0xff54 };
