@@ -2,69 +2,64 @@
   description = "delta: a window manager for river";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs?ref=nixos-unstable";
+    nixpkgs.url = "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst";
+
+    systems.url = "github:nix-systems/default";
+
+    zig = {
+      url = "github:mitchellh/zig-overlay";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        systems.follows = "systems";
+      };
+    };
+
+    zon2nix = {
+      url = "github:jcollie/zon2nix?ref=main";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+      };
+    };
   };
 
-  outputs = {nixpkgs, ...}: let
-    systems = [
-      "x86_64-linux"
-      "aarch64-linux"
-    ];
-    forEachSystem = nixpkgs.lib.genAttrs systems;
-
-    pkgsFor = system: import nixpkgs {inherit system;};
-
-    zigFor = pkgs: pkgs.zig_0_16;
-
-    buildToolsFor = pkgs:
-      with pkgs; [
-        pkg-config
-        wayland-scanner
-        wayland-protocols
-        linuxHeaders
-      ];
-
-    runtimeLibsFor = pkgs:
-      with pkgs; [
-        wayland
-        libxkbcommon
-      ];
-
-    devToolsFor = pkgs:
-      with pkgs; [
-        river
-        foot
-      ];
+  outputs = {
+    self,
+    nixpkgs,
+    zig,
+    zon2nix,
+    systems,
+    ...
+  }: let
+    inherit (nixpkgs) lib legacyPackages;
+    platforms = lib.attrNames zig.packages;
+    forAllPlatforms = f: lib.genAttrs platforms (s: f legacyPackages.${s});
   in {
-    devShells = forEachSystem (
-      system: let
-        pkgs = pkgsFor system;
-        zig = zigFor pkgs;
-        runtimeLibs = runtimeLibsFor pkgs;
-      in {
-        default = pkgs.mkShell {
-          packages =
-            [
-              zig
-              pkgs.zls
-            ]
-            ++ buildToolsFor pkgs
-            ++ devToolsFor pkgs;
-
-          buildInputs = runtimeLibs;
-
-          env = {
-            ZIG_GLOBAL_CACHE_DIR = ".zig-cache/global";
-            LD_LIBRARY_PATH = nixpkgs.lib.makeLibraryPath runtimeLibs;
-          };
-
-          shellHook = ''
-            echo "⚡ delta dev shell — $(zig version)"
-          '';
+    devShells = forAllPlatforms (pkgs: {
+      default =
+        pkgs.callPackage ./nix/devShell.nix
+        {
+          zig = zig.packages.${pkgs.stdenv.hostPlatform.system}."0.16.0";
+          zon2nix = zon2nix.packages.${pkgs.stdenv.hostPlatform.system}.zon2nix;
         };
-      }
-    );
+    });
 
-    formatter = forEachSystem (system: (pkgsFor system).nixfmt-rfc-style);
+    packages = forAllPlatforms (pkgs: let
+      scope = pkgs.callPackage ./nix/pkgs {};
+    in {
+      inherit (scope) river delta;
+      default = scope.river;
+    });
+
+    overlays.default = final: _prev: let
+      scope = final.callPackage ./nix/pkgs {};
+    in {
+      inherit (scope) delta;
+      river = scope.river;
+    };
+
+    formatter = forAllPlatforms (pkgs: pkgs.alejandra);
+
+    nixosModules.river = import ./nix;
+    nixosModules.default = self.nixosModules.river;
   };
 }
