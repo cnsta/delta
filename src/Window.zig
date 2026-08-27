@@ -170,6 +170,8 @@ pub fn syncVisibility(window: *Window) void {
     window.hidden = want_hidden;
 }
 
+const max_overshoot = 64;
+
 pub fn sized(window: *const Window) bool {
     return window.width > 0 and window.height > 0;
 }
@@ -180,22 +182,32 @@ fn syncSize(window: *Window) void {
     const short_w = @max(0, window.slot.width - window.width);
     const short_h = @max(0, window.slot.height - window.height);
     if (short_w == 0 and short_h == 0) return;
+    if (short_w > max_overshoot or short_h > max_overshoot) return;
 
-    std.log.info("fitting: slot {d}x{d} actual {d}x{d} overshoot {d}x{d}", .{
-        window.slot.width,
-        window.slot.height,
-        window.width,
-        window.height,
-        window.overshoot.width,
-        window.overshoot.height,
-    });
+    if (short_w > 0) {
+        window.overshoot.width = @min(max_overshoot, @max(window.overshoot.width * 2, short_w));
+    }
+    if (short_h > 0) {
+        window.overshoot.height = @min(max_overshoot, @max(window.overshoot.height * 2, short_h));
+    }
 
-    window.overshoot.width = @min(window.slot.width, window.overshoot.width + short_w);
-    window.overshoot.height = @min(window.slot.height, window.overshoot.height + short_h);
+    const want: geom.Size = .{
+        .width = window.slot.width + window.overshoot.width,
+        .height = window.slot.height + window.overshoot.height,
+    };
 
-    window.obj.proposeDimensions(
-        window.slot.width + window.overshoot.width,
-        window.slot.height + window.overshoot.height,
+    if (want.width == window.proposed.width and want.height == window.proposed.height) return;
+
+    window.obj.proposeDimensions(want.width, want.height);
+    window.proposed = want;
+}
+
+pub fn center(window: *Window) void {
+    if (window.slot.width == 0 or !window.sized()) return;
+
+    window.setPosition(
+        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
+        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
     );
 }
 

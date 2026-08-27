@@ -234,7 +234,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
         o.setWorkspace(target);
     }
 
-    seat.focused = null;
+    seat.dropFocus();
     seat.focus(target.windows.last());
 }
 
@@ -245,7 +245,7 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
 
     window.setWorkspace(target);
 
-    seat.focused = null;
+    seat.dropFocus();
     seat.focus(null);
 }
 
