@@ -1,7 +1,3 @@
-// SPDX-FileCopyrightText: © 2026 Vladyslav Khardel
-// SPDX-FileCopyrightText: © 2026 delta contributors
-// SPDX-License-Identifier: 0BSD
-
 const std = @import("std");
 const wayland = @import("wayland");
 

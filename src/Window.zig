@@ -140,12 +140,16 @@ pub fn sized(window: *const Window) bool {
 }
 
 pub fn center(window: *Window) void {
-    if (!window.sized()) return;
     if (window.slot.width == 0) return;
 
+    if (!window.sized()) {
+        window.setPosition(window.slot.x, window.slot.y);
+        return;
+    }
+
     window.setPosition(
-        window.slot.x + @divTrunc(window.slot.width - window.width, 2),
-        window.slot.y + @divTrunc(window.slot.height - window.height, 2),
+        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
+        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
     );
 }
 

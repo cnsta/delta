@@ -10,6 +10,7 @@ const Eddy = @This();
 root: ?Node = null,
 
 pub const gap = 4;
+pub const split_bias: f32 = 1.0;
 pub const Split = enum { vertical, horizontal };
 
 pub const Node = union(enum) {
@@ -45,7 +46,13 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
 
     const parent = target.branch;
     const index = if (parent) |p| indexOf(p, .{ .window = target }) else 0;
-    const split: Split = if (target.width > target.height) .vertical else .horizontal;
+
+    const box = target.slot;
+    const split: Split = if (@as(f32, @floatFromInt(box.width)) >
+        @as(f32, @floatFromInt(box.height)) * split_bias)
+        .vertical
+    else
+        .horizontal;
 
     var first: Node = .{ .window = target };
     var second: Node = .{ .window = window };
@@ -163,14 +170,18 @@ fn place(node: Node, rect: geom.Rect) void {
     switch (node) {
         .window => |w| {
             const inset = Window.border_width + gap;
-            w.slot = .{
+            const slot: geom.Rect = .{
                 .x = rect.x + inset,
                 .y = rect.y + inset,
                 .width = @max(1, rect.width - 2 * inset),
                 .height = @max(1, rect.height - 2 * inset),
             };
-            w.setPosition(w.slot.x, w.slot.y);
-            w.obj.proposeDimensions(w.slot.width, w.slot.height);
+
+            if (slot.width != w.slot.width or slot.height != w.slot.height) {
+                w.obj.proposeDimensions(slot.width, slot.height);
+            }
+
+            w.slot = slot;
         },
         .branch => |b| {
             b.rect = rect;
