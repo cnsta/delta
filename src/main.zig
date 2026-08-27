@@ -18,6 +18,8 @@ const Globals = struct {
 };
 
 pub fn main(init: std.process.Init) !void {
+    std.log.info("PATH={s}", .{init.environ_map.get("PATH") orelse "<unset>"});
+
     const display = try wl.Display.connect(null);
     defer display.disconnect();
 

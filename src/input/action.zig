@@ -1,6 +1,7 @@
 const std = @import("std");
 
 const wm = &@import("../Delta.zig").instance;
+const geom = @import("../util/geom.zig");
 
 const Seat = @import("../Seat.zig");
 const Workspace = @import("../Workspace.zig");
@@ -12,10 +13,14 @@ pub const Action = union(enum) {
     spawn: []const []const u8,
     close,
     focus_next,
+    focus_direction: geom.Direction,
     focus_workspace: Workspace.Id,
     send_to_workspace: Workspace.Id,
-    move,
-    resize,
+    pointer_move,
+    pointer_resize,
+
+    resize: geom.Point,
+
     exit,
 
     pub fn execute(action: Action, seat: *Seat) void {
@@ -24,10 +29,12 @@ pub const Action = union(enum) {
             .spawn => |argv| spawn(argv),
             .close => seat.closeFocused(),
             .focus_next => seat.focusNext(),
+            .focus_direction => |dir| seat.focusDirection(dir),
             .focus_workspace => |id| seat.focusWorkspace(id),
             .send_to_workspace => |id| seat.sendToWorkspace(id),
-            .move => seat.startPointerMove(),
-            .resize => seat.startPointerResize(),
+            .pointer_move => seat.startPointerMove(),
+            .pointer_resize => seat.startPointerResize(),
+            .resize => |unit| seat.resizeBy(unit),
             .exit => wm.obj.exitSession(),
         }
     }

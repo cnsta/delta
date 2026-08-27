@@ -10,6 +10,7 @@ pub const Gaps = struct {
 };
 
 pub const gaps: Gaps = .{};
+pub const resize_step = 32;
 
 comptime {
     if (@rem(gaps.between, 2) != 0) {

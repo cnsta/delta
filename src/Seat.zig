@@ -12,6 +12,7 @@ const geom = @import("util/geom.zig");
 
 const Action = @import("input/action.zig").Action;
 const Eddy = @import("layouts/Eddy.zig");
+const rules = @import("layouts/rules.zig");
 const Output = @import("Output.zig");
 const PointerBinding = @import("input/PointerBinding.zig");
 const Window = @import("Window.zig");
@@ -214,6 +215,22 @@ pub fn focusNext(seat: *Seat) void {
     seat.focus(ws.windows.first());
 }
 
+pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
+    const window = seat.focused orelse {
+        seat.focus(null);
+        return;
+    };
+    const ws = window.workspace orelse return;
+
+    if (ws.windowInDirection(window, dir)) |target| seat.focus(target);
+}
+
+pub fn resizeBy(seat: *Seat, unit: geom.Point) void {
+    const window = seat.focused orelse return;
+
+    Eddy.resize(window, unit.x * rules.resize_step, unit.y * rules.resize_step);
+}
+
 pub fn startPointerMove(seat: *Seat) void {
     if (seat.op != .none) return;
     const window = seat.hovered orelse return;
@@ -331,6 +348,7 @@ pub fn manage(seat: *Seat) void {
 fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
+    const super_ctrl: river.SeatV1.Modifiers = .{ .mod4 = true, .ctrl = true };
 
     XkbBinding.create(seat, super, .t, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/ghostty"} });
     XkbBinding.create(seat, super, .space, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/fuzzel"} });
@@ -342,6 +360,35 @@ fn setupDefaultBindings(seat: *Seat) void {
 
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .n, .focus_next);
+
+    const orthogonal = .{
+        .{ @as(u32, 0xff51), xkb.Keysym.h, geom.Direction.left, geom.Point{ .x = -1, .y = 0 } },
+        .{ @as(u32, 0xff53), xkb.Keysym.l, geom.Direction.right, geom.Point{ .x = 1, .y = 0 } },
+        .{ @as(u32, 0xff52), xkb.Keysym.k, geom.Direction.up, geom.Point{ .x = 0, .y = -1 } },
+        .{ @as(u32, 0xff54), xkb.Keysym.j, geom.Direction.down, geom.Point{ .x = 0, .y = 1 } },
+    };
+
+    inline for (orthogonal) |entry| {
+        const arrow: xkb.Keysym = @enumFromInt(entry[0]);
+        const letter = entry[1];
+
+        XkbBinding.create(seat, super, arrow, .{ .focus_direction = entry[2] });
+        XkbBinding.create(seat, super, letter, .{ .focus_direction = entry[2] });
+
+        XkbBinding.create(seat, super_ctrl, arrow, .{ .resize = entry[3] });
+        XkbBinding.create(seat, super_ctrl, letter, .{ .resize = entry[3] });
+    }
+
+    const diagonal = .{
+        .{ xkb.Keysym.y, geom.Point{ .x = -1, .y = -1 } },
+        .{ xkb.Keysym.u, geom.Point{ .x = 1, .y = -1 } },
+        .{ xkb.Keysym.b, geom.Point{ .x = -1, .y = 1 } },
+        .{ xkb.Keysym.n, geom.Point{ .x = 1, .y = 1 } },
+    };
+
+    inline for (diagonal) |entry| {
+        XkbBinding.create(seat, super_ctrl, entry[0], .{ .resize = entry[1] });
+    }
     XkbBinding.create(seat, super, .Escape, .exit);
 
     inline for (1..10) |n| {
@@ -350,8 +397,8 @@ fn setupDefaultBindings(seat: *Seat) void {
         XkbBinding.create(seat, super_shift, keysym, .{ .send_to_workspace = n });
     }
 
-    PointerBinding.create(seat, super, event_codes.BTN_LEFT, .move);
-    PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .resize);
+    PointerBinding.create(seat, super, event_codes.BTN_LEFT, .pointer_move);
+    PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .pointer_resize);
 }
 
 fn shellListener(

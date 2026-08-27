@@ -24,3 +24,10 @@ pub const Rect = struct {
         return .{ .x = r.x, .y = r.y };
     }
 };
+
+pub const Direction = enum {
+    left,
+    right,
+    up,
+    down,
+};

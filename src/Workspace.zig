@@ -102,3 +102,37 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
     before.prev.?.insert(&ws.link);
     return ws;
 }
+
+pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*Window {
+    const a = from.slot;
+    if (a.width == 0) return null;
+
+    var best: ?*Window = null;
+    var best_gap: i32 = std.math.maxInt(i32);
+
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |other| {
+        if (other == from or other.slot.width == 0) continue;
+        const b = other.slot;
+
+        const overlaps = switch (dir) {
+            .left, .right => b.y < a.y + a.height and a.y < b.y + b.height,
+            .up, .down => b.x < a.x + a.width and a.x < b.x + b.width,
+        };
+        if (!overlaps) continue;
+
+        const gap = switch (dir) {
+            .left => if (b.x + b.width <= a.x) a.x - (b.x + b.width) else continue,
+            .right => if (b.x >= a.x + a.width) b.x - (a.x + a.width) else continue,
+            .up => if (b.y + b.height <= a.y) a.y - (b.y + b.height) else continue,
+            .down => if (b.y >= a.y + a.height) b.y - (a.y + a.height) else continue,
+        };
+
+        if (gap < best_gap) {
+            best = other;
+            best_gap = gap;
+        }
+    }
+
+    return best;
+}
