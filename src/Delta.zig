@@ -6,6 +6,8 @@ const wl = wayland.client.wl;
 
 const list = @import("util/list.zig");
 
+const rules = @import("layouts/rules.zig");
+
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
@@ -107,14 +109,8 @@ fn manageStart(delta: *Delta) void {
         var it = list.safeIterator(Workspace, .link, &delta.workspaces);
         while (it.next()) |workspace| {
             const output = workspace.output orelse continue;
-            const usable = output.usableArea();
 
-            workspace.layout.arrange(.{
-                .x = usable.x - output.x,
-                .y = usable.y - output.y,
-                .width = usable.width,
-                .height = usable.height,
-            });
+            workspace.layout.arrange(rules.workArea(output));
         }
     }
 

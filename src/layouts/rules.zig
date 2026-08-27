@@ -1,0 +1,125 @@
+const std = @import("std");
+
+const geom = @import("../util/geom.zig");
+
+const Output = @import("../Output.zig");
+
+pub const Gaps = struct {
+    between: i32 = 8,
+    edge: i32 = 8,
+};
+
+pub const gaps: Gaps = .{};
+
+comptime {
+    if (@rem(gaps.between, 2) != 0) {
+        @compileError("rules.gaps.between must be even so it can be split across two edges");
+    }
+}
+
+pub const Limits = struct {
+    min: geom.Size = .{ .width = 0, .height = 0 },
+    max: geom.Size = .{ .width = 0, .height = 0 },
+};
+
+pub const Edges = struct {
+    top: bool = false,
+    bottom: bool = false,
+    left: bool = false,
+    right: bool = false,
+
+    pub fn eql(a: Edges, b: Edges) bool {
+        return a.top == b.top and a.bottom == b.bottom and
+            a.left == b.left and a.right == b.right;
+    }
+};
+
+pub const Placement = struct {
+    content: geom.Rect,
+    tiled: Edges,
+};
+
+pub fn workArea(output: *const Output) geom.Rect {
+    const usable = output.usableArea();
+    return .{
+        .x = usable.x - output.x + gaps.edge,
+        .y = usable.y - output.y + gaps.edge,
+        .width = @max(1, usable.width - 2 * gaps.edge),
+        .height = @max(1, usable.height - 2 * gaps.edge),
+    };
+}
+
+pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
+    const half = @divExact(gaps.between, 2);
+
+    const tiled: Edges = .{
+        .left = !sticks(box.x, area.x),
+        .top = !sticks(box.y, area.y),
+        .right = !sticks(box.x + box.width, area.x + area.width),
+        .bottom = !sticks(box.y + box.height, area.y + area.height),
+    };
+
+    const b = border_width;
+    const left = b + if (tiled.left) half else 0;
+    const top = b + if (tiled.top) half else 0;
+    const right = b + if (tiled.right) half else 0;
+    const bottom = b + if (tiled.bottom) half else 0;
+
+    var content: geom.Rect = .{
+        .x = box.x + left,
+        .y = box.y + top,
+        .width = @max(1, box.width - left - right),
+        .height = @max(1, box.height - top - bottom),
+    };
+
+    clamp(&content, limits, area);
+
+    return .{ .content = content, .tiled = tiled };
+}
+
+pub const border_width = 2;
+
+fn clamp(content: *geom.Rect, limits: Limits, area: geom.Rect) void {
+    var width = content.width;
+    var height = content.height;
+
+    if (limits.min.width > 0) width = @max(width, limits.min.width);
+    if (limits.max.width > 0) width = @min(width, limits.max.width);
+    if (limits.min.height > 0) height = @max(height, limits.min.height);
+    if (limits.max.height > 0) height = @min(height, limits.max.height);
+
+    if (width == content.width and height == content.height) return;
+
+    content.x += @divTrunc(content.width - width, 2);
+    content.y += @divTrunc(content.height - height, 2);
+    content.width = width;
+    content.height = height;
+
+    content.x = std.math.clamp(content.x, area.x, @max(area.x, area.x + area.width - width));
+    content.y = std.math.clamp(content.y, area.y, @max(area.y, area.y + area.height - height));
+}
+
+fn sticks(a: i32, b: i32) bool {
+    return @abs(a - b) <= 1;
+}
+
+test place {
+    const area: geom.Rect = .{ .x = 10, .y = 10, .width = 200, .height = 100 };
+
+    const left = place(.{ .x = 10, .y = 10, .width = 100, .height = 100 }, area, .{});
+    const right = place(.{ .x = 110, .y = 10, .width = 100, .height = 100 }, area, .{});
+
+    const left_border_end = left.content.x + left.content.width + border_width;
+    const right_border_start = right.content.x - border_width;
+    try std.testing.expectEqual(gaps.between, right_border_start - left_border_end);
+
+    try std.testing.expectEqual(area.x + border_width, left.content.x);
+    try std.testing.expectEqual(
+        area.x + area.width - border_width,
+        right.content.x + right.content.width,
+    );
+
+    try std.testing.expect(left.tiled.right and !left.tiled.left);
+    try std.testing.expect(right.tiled.left and !right.tiled.right);
+    try std.testing.expect(!left.tiled.top and !left.tiled.bottom);
+}

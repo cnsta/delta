@@ -3,13 +3,14 @@ const std = @import("std");
 const wm = &@import("../Delta.zig").instance;
 const geom = @import("../util/geom.zig");
 
+const rules = @import("rules.zig");
+
 const Window = @import("../Window.zig");
 
 const Eddy = @This();
 
 root: ?Node = null,
 
-pub const gap = 4;
 pub const split_bias: f32 = 1.0;
 pub const Split = enum { vertical, horizontal };
 
@@ -135,7 +136,7 @@ pub fn swap(layout: *Eddy, a: *Window, b: *Window) void {
 
 pub fn arrange(layout: *Eddy, area: geom.Rect) void {
     const root = layout.root orelse return;
-    place(root, area);
+    place(root, area, area);
 }
 
 pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
@@ -166,32 +167,14 @@ pub fn resize(window: *Window, dx: i32, dy: i32) void {
     }
 }
 
-fn place(node: Node, rect: geom.Rect) void {
+fn place(node: Node, rect: geom.Rect, area: geom.Rect) void {
     switch (node) {
-        .window => |w| {
-            const inset = Window.border_width + gap;
-            const slot: geom.Rect = .{
-                .x = rect.x + inset,
-                .y = rect.y + inset,
-                .width = @max(1, rect.width - 2 * inset),
-                .height = @max(1, rect.height - 2 * inset),
-            };
-
-            if (slot.width != w.slot.width or slot.height != w.slot.height) {
-                w.overshoot = .{ .width = 0, .height = 0 };
-                w.proposed = .{ .width = slot.width, .height = slot.height };
-                w.obj.proposeDimensions(slot.width, slot.height);
-                w.obj.setContentClipBox(0, 0, slot.width, slot.height);
-            }
-
-            w.slot = slot;
-            w.setPosition(slot.x, slot.y);
-        },
+        .window => |w| w.applyPlacement(rules.place(rect, area, w.limits)),
         .branch => |b| {
             b.rect = rect;
             const halves = subdivide(rect, b.split, b.ratio);
-            place(b.children[0], halves[0]);
-            place(b.children[1], halves[1]);
+            place(b.children[0], halves[0], area);
+            place(b.children[1], halves[1], area);
         },
     }
 }

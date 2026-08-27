@@ -11,6 +11,7 @@ const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
+const rules = @import("layouts/rules.zig");
 
 const Seat = @import("Seat.zig");
 const Workspace = @import("Workspace.zig");
@@ -33,6 +34,8 @@ workspace: ?*Workspace = null,
 overshoot: geom.Size = .{ .width = 0, .height = 0 },
 proposed: geom.Size = .{ .width = 0, .height = 0 },
 placed: ?geom.Point = null,
+limits: rules.Limits = .{},
+tiled: ?rules.Edges = null,
 
 x: i32 = 0,
 y: i32 = 0,
@@ -47,7 +50,6 @@ pub const PointerRequest = union(enum) {
     resize: struct { seat: *Seat },
 };
 
-pub const border_width = 2;
 pub const border_focused = color.rgb(0x7a, 0xa2, 0xf7);
 pub const border_inactive = color.rgb(0x41, 0x48, 0x68);
 
@@ -137,6 +139,29 @@ pub fn syncPosition(window: *Window) void {
     window.placed = at;
 }
 
+pub fn applyPlacement(window: *Window, p: rules.Placement) void {
+    if (window.tiled == null or !window.tiled.?.eql(p.tiled)) {
+        window.obj.setTiled(.{
+            .top = p.tiled.top,
+            .bottom = p.tiled.bottom,
+            .left = p.tiled.left,
+            .right = p.tiled.right,
+        });
+        window.tiled = p.tiled;
+    }
+
+    if (p.content.width != window.slot.width or p.content.height != window.slot.height) {
+        window.overshoot = .{ .width = 0, .height = 0 };
+        window.proposed = .{ .width = p.content.width, .height = p.content.height };
+        window.obj.proposeDimensions(p.content.width, p.content.height);
+
+        window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
+    }
+
+    window.slot = p.content;
+    window.setPosition(p.content.x, p.content.y);
+}
+
 pub fn syncVisibility(window: *Window) void {
     const want_hidden = !window.visible();
     if (want_hidden == window.hidden) return;
@@ -156,37 +181,22 @@ fn syncSize(window: *Window) void {
     const short_h = @max(0, window.slot.height - window.height);
     if (short_w == 0 and short_h == 0) return;
 
-    if (short_w > 0) {
-        window.overshoot.width = @min(
-            window.slot.width,
-            @max(window.overshoot.width * 2, short_w),
-        );
-    }
-    if (short_h > 0) {
-        window.overshoot.height = @min(
-            window.slot.height,
-            @max(window.overshoot.height * 2, short_h),
-        );
-    }
-
-    const want: geom.Size = .{
-        .width = window.slot.width + window.overshoot.width,
-        .height = window.slot.height + window.overshoot.height,
-    };
-
-    if (want.width == window.proposed.width and want.height == window.proposed.height) return;
-
-    std.log.info("fitting: slot {d}x{d} actual {d}x{d} -> propose {d}x{d}", .{
+    std.log.info("fitting: slot {d}x{d} actual {d}x{d} overshoot {d}x{d}", .{
         window.slot.width,
         window.slot.height,
         window.width,
         window.height,
-        want.width,
-        want.height,
+        window.overshoot.width,
+        window.overshoot.height,
     });
 
-    window.obj.proposeDimensions(want.width, want.height);
-    window.proposed = want;
+    window.overshoot.width = @min(window.slot.width, window.overshoot.width + short_w);
+    window.overshoot.height = @min(window.slot.height, window.overshoot.height + short_h);
+
+    window.obj.proposeDimensions(
+        window.slot.width + window.overshoot.width,
+        window.slot.height + window.overshoot.height,
+    );
 }
 
 pub fn focused(window: *const Window) bool {
@@ -202,7 +212,7 @@ pub fn syncDecoration(window: *Window) void {
     const c = if (is_focused) border_focused else border_inactive;
     window.obj.setBorders(
         .{ .top = true, .bottom = true, .left = true, .right = true },
-        border_width,
+        rules.border_width,
         c.r,
         c.g,
         c.b,
@@ -242,6 +252,10 @@ pub fn manage(window: *Window) void {
 fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) void {
     switch (event) {
         .closed => window.closed = true,
+        .dimensions_hint => |args| window.limits = .{
+            .min = .{ .width = args.min_width, .height = args.min_height },
+            .max = .{ .width = args.max_width, .height = args.max_height },
+        },
         .dimensions => |args| {
             window.width = args.width;
             window.height = args.height;
