@@ -28,6 +28,7 @@ link: wl.list.Link,
 focused: ?*Window = null,
 hovered: ?*Window = null,
 interacted: ?*Window = null,
+warp_to: ?*Window = null,
 
 xkb_bindings: wl.list.Head(XkbBinding, .link),
 pointer_bindings: wl.list.Head(PointerBinding, .link),
@@ -46,6 +47,8 @@ pointer: geom.Point = geom.Point.zero,
 pointer_known: bool = false,
 
 output: ?*Output = null,
+
+pub const warp_on_focus = true;
 
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
@@ -118,28 +121,6 @@ pub fn forgetWindow(seat: *Seat, window: *Window) void {
     }
 }
 
-fn updateOutput(seat: *Seat) void {
-    if (seat.pointer_known) {
-        if (Output.at(seat.pointer)) |o| {
-            seat.output = o;
-            return;
-        }
-    }
-
-    if (seat.focused) |w| {
-        if (w.workspace) |ws| {
-            if (ws.output) |o| {
-                seat.output = o;
-                return;
-            }
-        }
-    }
-
-    if (seat.output != null) return;
-
-    seat.output = wm.outputs.first();
-}
-
 pub fn forgetOutput(seat: *Seat, output_gone: *Output) void {
     if (seat.output == output_gone) seat.output = null;
 }
@@ -182,12 +163,6 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
     seat.focused = target;
 }
 
-fn dropFocus(seat: *Seat) void {
-    const old = seat.focused orelse return;
-    old.focus_count -= 1;
-    seat.focused = null;
-}
-
 pub fn pointerMove(seat: *Seat, window: *Window) void {
     if (seat.op != .none) return;
 
@@ -211,21 +186,6 @@ pub fn pointerResize(seat: *Seat, window: *Window) void {
 pub fn closeFocused(seat: *Seat) void {
     const window = seat.focused orelse return;
     window.obj.close();
-}
-
-pub fn focusNext(seat: *Seat) void {
-    const ws = seat.workspace() orelse return;
-    seat.focus(ws.windows.first());
-}
-
-pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
-    const window = seat.focused orelse {
-        seat.focus(null);
-        return;
-    };
-    const ws = window.workspace orelse return;
-
-    if (ws.windowInDirection(window, dir)) |target| seat.focus(target);
 }
 
 pub fn toggleFullscreen(seat: *Seat) void {
@@ -267,6 +227,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
 
     seat.dropFocus();
     seat.focus(target.windows.last());
+    seat.warpTo(seat.focused);
 }
 
 pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
@@ -278,34 +239,7 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
 
     seat.dropFocus();
     seat.focus(null);
-}
-
-fn syncBindings(seat: *Seat, on: bool) void {
-    var keys = seat.xkb_bindings.iterator(.forward);
-    while (keys.next()) |binding| binding.setEnabled(on);
-
-    var buttons = seat.pointer_bindings.iterator(.forward);
-    while (buttons.next()) |binding| binding.setEnabled(on);
-}
-
-fn endOp(seat: *Seat) void {
-    if (seat.op == .none) return;
-
-    seat.obj.opEnd();
-    seat.op = .none;
-}
-
-fn dropMove(seat: *Seat, window: *Window) void {
-    if (!seat.pointer_known) return;
-    const ws = window.workspace orelse return;
-    const origin = ws.origin() orelse return;
-
-    const point: geom.Point = .{
-        .x = seat.pointer.x - origin.x,
-        .y = seat.pointer.y - origin.y,
-    };
-    const other = ws.layout.windowAt(point) orelse return;
-    ws.layout.swap(window, other);
+    seat.warpTo(seat.focused);
 }
 
 pub fn manage(seat: *Seat) void {
@@ -352,6 +286,77 @@ pub fn manage(seat: *Seat) void {
     }
 
     seat.op_release = false;
+}
+
+pub fn applyWarp(seat: *Seat) void {
+    const window = seat.warp_to orelse return;
+    seat.warp_to = null;
+
+    if (seat.op != .none) return;
+    if (!window.visible()) return;
+
+    const ws = window.workspace orelse return;
+    const topleft = ws.origin() orelse return;
+
+    if (!warp_on_focus) {
+        seat.output = ws.output;
+        return;
+    }
+
+    const x = topleft.x + window.slot.x + @divTrunc(window.slot.width, 2);
+    const y = topleft.y + window.slot.y + @divTrunc(window.slot.height, 2);
+    seat.obj.pointerWarp(x, y);
+    seat.pointer = .{ .x = x, .y = y };
+    seat.pointer_known = true;
+    seat.output = ws.output;
+}
+
+pub fn focusNext(seat: *Seat) void {
+    const ws = seat.workspace() orelse return;
+    seat.focus(ws.windows.first());
+    seat.warpTo(seat.focused);
+}
+
+pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
+    const window = seat.focused orelse {
+        seat.focus(null);
+        seat.warpTo(seat.focused);
+        return;
+    };
+    const ws = window.workspace orelse return;
+
+    if (ws.windowInDirection(window, dir)) |target| {
+        seat.focus(target);
+        seat.warpTo(seat.focused);
+    }
+}
+
+fn syncBindings(seat: *Seat, on: bool) void {
+    var keys = seat.xkb_bindings.iterator(.forward);
+    while (keys.next()) |binding| binding.setEnabled(on);
+
+    var buttons = seat.pointer_bindings.iterator(.forward);
+    while (buttons.next()) |binding| binding.setEnabled(on);
+}
+
+fn endOp(seat: *Seat) void {
+    if (seat.op == .none) return;
+
+    seat.obj.opEnd();
+    seat.op = .none;
+}
+
+fn dropMove(seat: *Seat, window: *Window) void {
+    if (!seat.pointer_known) return;
+    const ws = window.workspace orelse return;
+    const origin = ws.origin() orelse return;
+
+    const point: geom.Point = .{
+        .x = seat.pointer.x - origin.x,
+        .y = seat.pointer.y - origin.y,
+    };
+    const other = ws.layout.windowAt(point) orelse return;
+    ws.layout.swap(window, other);
 }
 
 /// Hardcoded for now.
@@ -452,4 +457,36 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
 
         else => {},
     }
+}
+
+fn updateOutput(seat: *Seat) void {
+    if (seat.pointer_known) {
+        if (Output.at(seat.pointer)) |o| {
+            seat.output = o;
+            return;
+        }
+    }
+
+    if (seat.focused) |w| {
+        if (w.workspace) |ws| {
+            if (ws.output) |o| {
+                seat.output = o;
+                return;
+            }
+        }
+    }
+
+    if (seat.output != null) return;
+
+    seat.output = wm.outputs.first();
+}
+
+fn warpTo(seat: *Seat, window: ?*Window) void {
+    if (window) |w| seat.warp_to = w;
+}
+
+fn dropFocus(seat: *Seat) void {
+    const old = seat.focused orelse return;
+    old.focus_count -= 1;
+    seat.focused = null;
 }
