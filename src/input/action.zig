@@ -18,9 +18,16 @@ pub const Action = union(enum) {
     send_to_workspace: Workspace.Id,
     pointer_move,
     pointer_resize,
-    resize: geom.Direction,
+    resize: Resize,
 
     exit,
+
+    pub const Resize = enum {
+        grow_width,
+        shrink_width,
+        grow_height,
+        shrink_height,
+    };
 
     pub fn execute(action: Action, seat: *Seat) void {
         switch (action) {
@@ -33,7 +40,7 @@ pub const Action = union(enum) {
             .send_to_workspace => |id| seat.sendToWorkspace(id),
             .pointer_move => seat.startPointerMove(),
             .pointer_resize => seat.startPointerResize(),
-            .resize => |dir| seat.resizeDirection(dir),
+            .resize => |how| seat.resizeStep(how),
             .exit => wm.obj.exitSession(),
         }
     }

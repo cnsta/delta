@@ -225,11 +225,16 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     if (ws.windowInDirection(window, dir)) |target| seat.focus(target);
 }
 
-pub fn resizeDirection(seat: *Seat, dir: geom.Direction) void {
+pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
     const window = seat.focused orelse return;
-    const d = dir.delta(rules.resize_step);
+    const step = rules.resize_step;
 
-    Eddy.resize(window, d.x, d.y);
+    switch (how) {
+        .grow_width => Eddy.resize(window, step, 0),
+        .shrink_width => Eddy.resize(window, -step, 0),
+        .grow_height => Eddy.resize(window, 0, step),
+        .shrink_height => Eddy.resize(window, 0, -step),
+    }
 }
 
 pub fn startPointerMove(seat: *Seat) void {
@@ -349,7 +354,6 @@ pub fn manage(seat: *Seat) void {
 fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
-    const super_ctrl: river.SeatV1.Modifiers = .{ .mod4 = true, .ctrl = true };
 
     XkbBinding.create(seat, super, .t, .{ .spawn = &.{"ghostty"} });
     XkbBinding.create(seat, super, .space, .{ .spawn = &.{"fuzzel"} });
@@ -371,10 +375,30 @@ fn setupDefaultBindings(seat: *Seat) void {
 
         XkbBinding.create(seat, super, key, .{ .focus_direction = dir });
         XkbBinding.create(seat, super, letter, .{ .focus_direction = dir });
-
-        XkbBinding.create(seat, super_ctrl, key, .{ .resize = dir });
-        XkbBinding.create(seat, super_ctrl, letter, .{ .resize = dir });
     }
+
+    const question: xkb.Keysym = @enumFromInt(0x03f);
+    const minus: xkb.Keysym = @enumFromInt(0x02d);
+    const plus: xkb.Keysym = @enumFromInt(0x02b);
+    const underscore: xkb.Keysym = @enumFromInt(0x05f);
+    const kp_add: xkb.Keysym = @enumFromInt(0xffab);
+    const kp_subtract: xkb.Keysym = @enumFromInt(0xffad);
+
+    XkbBinding.create(seat, super, question, .{ .resize = .grow_width });
+    XkbBinding.create(seat, super, plus, .{ .resize = .grow_width });
+
+    XkbBinding.create(seat, super, minus, .{ .resize = .shrink_width });
+    XkbBinding.create(seat, super, underscore, .{ .resize = .shrink_width });
+
+    XkbBinding.create(seat, super, kp_add, .{ .resize = .grow_width });
+    XkbBinding.create(seat, super, kp_subtract, .{ .resize = .shrink_width });
+
+    XkbBinding.create(seat, super_shift, plus, .{ .resize = .grow_height });
+    XkbBinding.create(seat, super_shift, question, .{ .resize = .grow_height });
+    XkbBinding.create(seat, super_shift, underscore, .{ .resize = .shrink_height });
+    XkbBinding.create(seat, super_shift, minus, .{ .resize = .shrink_height });
+    XkbBinding.create(seat, super_shift, kp_add, .{ .resize = .grow_height });
+    XkbBinding.create(seat, super_shift, kp_subtract, .{ .resize = .shrink_height });
 
     XkbBinding.create(seat, super, .Escape, .exit);
 

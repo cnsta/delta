@@ -29,6 +29,7 @@ pub const Branch = struct {
 
 const ratio_min = 0.05;
 const ratio_max = 0.95;
+const min_pane = 64;
 
 pub fn isEmpty(layout: *const Eddy) bool {
     return layout.root == null;
@@ -153,18 +154,17 @@ pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
 }
 
 pub fn resize(window: *Window, dx: i32, dy: i32) void {
-    if (nearest(window, .vertical)) |v| {
-        if (v.branch.rect.width > 0) {
-            const d = @as(f32, @floatFromInt(dx)) / @as(f32, @floatFromInt(v.branch.rect.width));
-            v.branch.ratio = std.math.clamp(v.branch.ratio + v.sign * d, ratio_min, ratio_max);
-        }
+    if (dx != 0) {
+        if (nearest(window, .vertical)) |v| applyRatio(v.branch, v.sign * ratioDelta(dx, v.branch.rect.width));
     }
-    if (nearest(window, .horizontal)) |h| {
-        if (h.branch.rect.height > 0) {
-            const d = @as(f32, @floatFromInt(dy)) / @as(f32, @floatFromInt(h.branch.rect.height));
-            h.branch.ratio = std.math.clamp(h.branch.ratio + h.sign * d, ratio_min, ratio_max);
-        }
+    if (dy != 0) {
+        if (nearest(window, .horizontal)) |h| applyRatio(h.branch, h.sign * ratioDelta(dy, h.branch.rect.height));
     }
+}
+
+fn ratioDelta(pixels: i32, extent: i32) f32 {
+    if (extent <= 0) return 0;
+    return @as(f32, @floatFromInt(pixels)) / @as(f32, @floatFromInt(extent));
 }
 
 fn place(node: Node, rect: geom.Rect, area: geom.Rect) void {
@@ -260,4 +260,41 @@ fn indexOf(parent: *Branch, child: Node) u1 {
     if (eql(parent.children[0], child)) return 0;
     std.debug.assert(eql(parent.children[1], child));
     return 1;
+}
+
+fn applyRatio(branch: *Branch, delta: f32) void {
+    if (delta == 0) return;
+
+    const extent = switch (branch.split) {
+        .vertical => branch.rect.width,
+        .horizontal => branch.rect.height,
+    };
+    if (extent <= 0) return;
+
+    const first = minExtent(branch.children[0], branch.split);
+    const second = minExtent(branch.children[1], branch.split);
+
+    const low = @max(ratio_min, ratioDelta(first, extent));
+    const high = @min(ratio_max, 1 - ratioDelta(second, extent));
+
+    if (low > high) return;
+
+    branch.ratio = std.math.clamp(branch.ratio + delta, low, high);
+}
+
+fn minExtent(node: Node, axis: Split) i32 {
+    switch (node) {
+        .window => |w| {
+            const wanted = switch (axis) {
+                .vertical => w.limits.min.width,
+                .horizontal => w.limits.min.height,
+            };
+            return @max(min_pane, wanted + 2 * rules.border_width + rules.gaps.between);
+        },
+        .branch => |b| {
+            const first = minExtent(b.children[0], axis);
+            const second = minExtent(b.children[1], axis);
+            return if (b.split == axis) first + second else @max(first, second);
+        },
+    }
 }
