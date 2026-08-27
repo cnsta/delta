@@ -156,22 +156,37 @@ fn syncSize(window: *Window) void {
     const short_h = @max(0, window.slot.height - window.height);
     if (short_w == 0 and short_h == 0) return;
 
-    std.log.info("fitting: slot {d}x{d} actual {d}x{d} overshoot {d}x{d}", .{
+    if (short_w > 0) {
+        window.overshoot.width = @min(
+            window.slot.width,
+            @max(window.overshoot.width * 2, short_w),
+        );
+    }
+    if (short_h > 0) {
+        window.overshoot.height = @min(
+            window.slot.height,
+            @max(window.overshoot.height * 2, short_h),
+        );
+    }
+
+    const want: geom.Size = .{
+        .width = window.slot.width + window.overshoot.width,
+        .height = window.slot.height + window.overshoot.height,
+    };
+
+    if (want.width == window.proposed.width and want.height == window.proposed.height) return;
+
+    std.log.info("fitting: slot {d}x{d} actual {d}x{d} -> propose {d}x{d}", .{
         window.slot.width,
         window.slot.height,
         window.width,
         window.height,
-        window.overshoot.width,
-        window.overshoot.height,
+        want.width,
+        want.height,
     });
 
-    window.overshoot.width = @min(window.slot.width, window.overshoot.width + short_w);
-    window.overshoot.height = @min(window.slot.height, window.overshoot.height + short_h);
-
-    window.obj.proposeDimensions(
-        window.slot.width + window.overshoot.width,
-        window.slot.height + window.overshoot.height,
-    );
+    window.obj.proposeDimensions(want.width, want.height);
+    window.proposed = want;
 }
 
 pub fn focused(window: *const Window) bool {
