@@ -31,7 +31,11 @@ workspaces: wl.list.Head(Workspace, .link),
 
 default_output: ?*Output = null,
 
+child_env: std.process.Environ.Map,
+
+running: bool = true,
 locked: bool = false,
+dirty: bool = false,
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -67,7 +71,7 @@ pub fn listener(
 ) void {
     switch (event) {
         .unavailable => std.process.fatal("Another window manager is already running.", .{}),
-        .finished => std.process.exit(0),
+        .finished => instance.running = false,
         .session_locked => instance.locked = true,
         .session_unlocked => instance.locked = false,
         .manage_start => instance.manageStart(),
@@ -76,6 +80,28 @@ pub fn listener(
         .output => |ev| Output.create(ev.id),
         .seat => |ev| Seat.create(ev.id),
     }
+}
+
+pub fn pollTimeout(delta: *Delta) i32 {
+    var soonest: ?i64 = null;
+
+    var it = delta.seats.iterator(.forward);
+    while (it.next()) |seat| {
+        const at = seat.repeatDeadline() orelse continue;
+        if (soonest == null or at < soonest.?) soonest = at;
+    }
+
+    const at = soonest orelse return -1;
+    const remaining = at - std.time.milliTimestamp();
+
+    return @intCast(@max(0, remaining));
+}
+
+pub fn tick(delta: *Delta) void {
+    const now = std.time.milliTimestamp();
+
+    var it = list.safeIterator(Seat, .link, &delta.seats);
+    while (it.next()) |seat| seat.tick(now);
 }
 
 fn manageStart(delta: *Delta) void {
