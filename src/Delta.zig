@@ -40,6 +40,7 @@ dirty: bool = false,
 pub fn init(
     gpa: std.mem.Allocator,
     io: std.Io,
+    child_env: std.process.Environ.Map, // Add parameter here
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
@@ -47,7 +48,7 @@ pub fn init(
     instance = .{
         .gpa = gpa,
         .io = io,
-
+        .child_env = child_env, // Assign field here
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
         .layer_shell = layer_shell_obj,
@@ -92,13 +93,14 @@ pub fn pollTimeout(delta: *Delta) i32 {
     }
 
     const at = soonest orelse return -1;
-    const remaining = at - std.time.milliTimestamp();
+    const now = std.Io.Clock.now(.awake, delta.io).toMilliseconds();
+    const remaining = at - now;
 
     return @intCast(@max(0, remaining));
 }
 
 pub fn tick(delta: *Delta) void {
-    const now = std.time.milliTimestamp();
+    const now = std.Io.Clock.now(.awake, delta.io).toMilliseconds();
 
     var it = list.safeIterator(Seat, .link, &delta.seats);
     while (it.next()) |seat| seat.tick(now);

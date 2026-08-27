@@ -29,7 +29,7 @@ const child_environment = [_][2][]const u8{
 };
 
 pub fn main(init: std.process.Init) !void {
-    const args = try init.args.toSlice(init.gpa);
+    const args = try init.minimal.args.toSlice(init.gpa);
     defer init.gpa.free(args);
 
     if (cli.parse(args[1..]).exit) |code| std.process.exit(code);

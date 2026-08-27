@@ -46,4 +46,20 @@ pub const Action = union(enum) {
             .exit => wm.obj.exitSession(),
         }
     }
+
+    pub fn repeats(action: Action) bool {
+        return switch (action) {
+            .resize, .focus_direction, .focus_next => true,
+            .none,
+            .spawn,
+            .close,
+            .toggle_fullscreen,
+            .focus_workspace,
+            .send_to_workspace,
+            .pointer_move,
+            .pointer_resize,
+            .exit,
+            => false,
+        };
+    }
 };

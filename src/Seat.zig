@@ -422,6 +422,27 @@ fn setupDefaultBindings(seat: *Seat) void {
     PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .pointer_resize);
 }
 
+pub fn tick(seat: *Seat, now: i64) void {
+    _ = seat;
+    _ = now;
+    // TODO: Implement timer-based events like keyboard repeats
+}
+
+pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
+    _ = seat;
+    _ = binding;
+}
+
+pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
+    _ = seat;
+    _ = binding;
+}
+
+pub fn repeatDeadline(seat: *Seat) ?i64 {
+    _ = seat;
+    return null;
+}
+
 fn shellListener(
     _: *river.LayerShellSeatV1,
     event: river.LayerShellSeatV1.Event,

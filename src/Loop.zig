@@ -40,7 +40,12 @@ pub fn init(display: *wl.Display) !Loop {
     };
     posix.sigaction(posix.SIG.CHLD, &act, null);
 
-    const signals = try posix.signalfd(-1, &mask, posix.SFD.CLOEXEC | posix.SFD.NONBLOCK);
+    const flags = @as(u32, @bitCast(posix.O{
+        .CLOEXEC = true,
+        .NONBLOCK = true,
+    }));
+
+    const signals = try posix.signalfd(-1, &mask, flags);
 
     return .{
         .display = display,
@@ -53,7 +58,7 @@ pub fn init(display: *wl.Display) !Loop {
 }
 
 pub fn deinit(loop: *Loop) void {
-    posix.close(loop.signals);
+    _ = std.c.close(loop.signals);
 }
 
 pub fn run(loop: *Loop) !void {
@@ -105,13 +110,15 @@ fn readSignals(loop: *Loop) void {
         };
         if (n != bytes.len) return;
 
-        switch (info.signo) {
-            posix.SIG.INT, posix.SIG.TERM => {
+        const sig: posix.SIG = @enumFromInt(info.signo);
+
+        switch (sig) {
+            .INT, .TERM => {
                 log.info("caught signal {d}, shutting down", .{info.signo});
 
                 wm.obj.stop();
             },
-            posix.SIG.HUP => log.info("caught SIGHUP (config reload is not implemented yet)", .{}),
+            .HUP => log.info("caught SIGHUP (config reload is not implemented yet)", .{}),
             else => {},
         }
     }
