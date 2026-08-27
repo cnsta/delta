@@ -332,8 +332,8 @@ fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
 
-    XkbBinding.create(seat, super, .t, .{ .spawn = &.{"/run/current-system/sw/bin/ghostty"} });
-    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"/run/current-system/sw/bin/fuzzel"} });
+    XkbBinding.create(seat, super, .t, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/ghostty"} });
+    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/fuzzel"} });
     XkbBinding.create(seat, super, .w, .{ .spawn = &.{"/run/current-system/sw/bin/zen"} });
     XkbBinding.create(seat, super_shift, .w, .{ .spawn = &.{ "/run/current-system/sw/bin/zen", "--private-window" } });
     XkbBinding.create(seat, super, .e, .{ .spawn = &.{"/run/current-system/sw/bin/nautilus"} });
