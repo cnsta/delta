@@ -30,6 +30,7 @@ decorated_focused: ?bool = null,
 parent: ?*Window = null,
 hidden: bool = false,
 workspace: ?*Workspace = null,
+overshoot: geom.Size = .{ .width = 0, .height = 0 },
 
 x: i32 = 0,
 y: i32 = 0,
@@ -139,17 +140,28 @@ pub fn sized(window: *const Window) bool {
     return window.width > 0 and window.height > 0;
 }
 
-pub fn center(window: *Window) void {
-    if (window.slot.width == 0) return;
+fn syncSize(window: *Window) void {
+    if (window.slot.width == 0 or !window.sized()) return;
 
-    if (!window.sized()) {
-        window.setPosition(window.slot.x, window.slot.y);
-        return;
-    }
+    const short_w = @max(0, window.slot.width - window.width);
+    const short_h = @max(0, window.slot.height - window.height);
+    if (short_w == 0 and short_h == 0) return;
 
-    window.setPosition(
-        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
-        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
+    std.log.info("fitting: slot {d}x{d} actual {d}x{d} overshoot {d}x{d}", .{
+        window.slot.width,
+        window.slot.height,
+        window.width,
+        window.height,
+        window.overshoot.width,
+        window.overshoot.height,
+    });
+
+    window.overshoot.width = @min(window.slot.width, window.overshoot.width + short_w);
+    window.overshoot.height = @min(window.slot.height, window.overshoot.height + short_h);
+
+    window.obj.proposeDimensions(
+        window.slot.width + window.overshoot.width,
+        window.slot.height + window.overshoot.height,
     );
 }
 
@@ -197,6 +209,7 @@ pub fn manage(window: *Window) void {
     }
     window.pointer_request = .none;
 
+    window.syncSize();
     window.syncDecoration();
     window.syncVisibility();
     window.syncPosition();

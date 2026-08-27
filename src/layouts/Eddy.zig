@@ -59,8 +59,8 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
 
     if (cursor) |c| {
         const before = switch (split) {
-            .vertical => c.x < target.x + @divTrunc(target.width, 2),
-            .horizontal => c.y < target.y + @divTrunc(target.height, 2),
+            .vertical => c.x < box.x + @divTrunc(box.width, 2),
+            .horizontal => c.y < box.y + @divTrunc(box.height, 2),
         };
         if (before) {
             first = .{ .window = window };
@@ -178,10 +178,14 @@ fn place(node: Node, rect: geom.Rect) void {
             };
 
             if (slot.width != w.slot.width or slot.height != w.slot.height) {
+                w.overshoot = .{ .width = 0, .height = 0 };
                 w.obj.proposeDimensions(slot.width, slot.height);
+
+                w.obj.setContentClipBox(0, 0, slot.width, slot.height);
             }
 
             w.slot = slot;
+            w.setPosition(slot.x, slot.y);
         },
         .branch => |b| {
             b.rect = rect;
