@@ -179,8 +179,8 @@ fn place(node: Node, rect: geom.Rect) void {
 
             if (slot.width != w.slot.width or slot.height != w.slot.height) {
                 w.overshoot = .{ .width = 0, .height = 0 };
+                w.proposed = .{ .width = slot.width, .height = slot.height };
                 w.obj.proposeDimensions(slot.width, slot.height);
-
                 w.obj.setContentClipBox(0, 0, slot.width, slot.height);
             }
 

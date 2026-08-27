@@ -31,6 +31,8 @@ parent: ?*Window = null,
 hidden: bool = false,
 workspace: ?*Workspace = null,
 overshoot: geom.Size = .{ .width = 0, .height = 0 },
+proposed: geom.Size = .{ .width = 0, .height = 0 },
+placed: ?geom.Point = null,
 
 x: i32 = 0,
 y: i32 = 0,
@@ -125,7 +127,14 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
 pub fn syncPosition(window: *Window) void {
     const ws = window.workspace orelse return;
     const origin = ws.origin() orelse return;
-    window.node.setPosition(origin.x + window.x, origin.y + window.y);
+
+    const at: geom.Point = .{ .x = origin.x + window.x, .y = origin.y + window.y };
+    if (window.placed) |last| {
+        if (last.x == at.x and last.y == at.y) return;
+    }
+
+    window.node.setPosition(at.x, at.y);
+    window.placed = at;
 }
 
 pub fn syncVisibility(window: *Window) void {
