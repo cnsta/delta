@@ -1,110 +1,118 @@
 const std = @import("std");
 const wayland = @import("wayland");
 
-const posix = std.posix;
+const river = wayland.client.river;
 const wl = wayland.client.wl;
+const fatal = std.process.fatal;
 
-const wm = &@import("Delta.zig").instance;
+const cli = @import("cli.zig");
+const Delta = @import("Delta.zig");
+const Loop = @import("Loop.zig");
 
-const Loop = @This();
+pub const std_options = @import("log.zig").std_options;
 
-const log = std.log.scoped(.default);
+const wm_version = 4;
+const xkb_bindings_version = 3;
+const layer_shell_version = 1;
 
-display: *wl.Display,
+const Globals = struct {
+    window_manager: ?*river.WindowManagerV1 = null,
+    xkb_bindings: ?*river.XkbBindingsV1 = null,
+    layer_shell: ?*river.LayerShellV1 = null,
+};
 
-signals: posix.fd_t,
+const child_environment = [_][2][]const u8{
+    .{ "XDG_CURRENT_DESKTOP", "river" },
+    .{ "XDG_SESSION_TYPE", "wayland" },
+    .{ "MOZ_ENABLE_WAYLAND", "1" },
+    .{ "_JAVA_AWT_WM_NONREPARENTING", "1" },
+};
 
-fds: [2]posix.pollfd,
+pub fn main(init: std.process.Init) !void {
+    const args = try init.args.toSlice(init.gpa);
+    defer init.gpa.free(args);
 
-const wayland_fd = 0;
-const signal_fd = 1;
+    if (cli.parse(args[1..]).exit) |code| std.process.exit(code);
 
-pub fn init(display: *wl.Display) !Loop {
-    var mask = posix.sigemptyset();
-    posix.sigaddset(&mask, posix.SIG.INT);
-    posix.sigaddset(&mask, posix.SIG.TERM);
-    posix.sigaddset(&mask, posix.SIG.HUP);
-    posix.sigprocmask(posix.SIG.BLOCK, &mask, null);
+    std.log.info("delta {s} starting", .{cli.version});
+    std.log.info("PATH={s}", .{init.environ_map.get("PATH") orelse "<unset>"});
 
-    var act: posix.Sigaction = .{
-        .handler = .{ .handler = posix.SIG.DFL },
-        .mask = posix.sigemptyset(),
-        .flags = posix.SA.NOCLDWAIT,
-    };
-    posix.sigaction(posix.SIG.CHLD, &act, null);
+    var child_env = try init.environ_map.clone(init.gpa);
+    defer child_env.deinit();
+    for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
 
-    const signals = try posix.signalfd(-1, &mask, posix.SFD.CLOEXEC | posix.SFD.NONBLOCK);
+    const display = try wl.Display.connect(null);
+    defer display.disconnect();
 
-    return .{
-        .display = display,
-        .signals = signals,
-        .fds = .{
-            .{ .fd = display.getFd(), .events = posix.POLL.IN, .revents = 0 },
-            .{ .fd = signals, .events = posix.POLL.IN, .revents = 0 },
-        },
-    };
-}
+    var globals: Globals = .{};
+    const registry = try display.getRegistry();
+    registry.setListener(*Globals, registryListener, &globals);
 
-pub fn deinit(loop: *Loop) void {
-    posix.close(loop.signals);
-}
+    if (display.roundtrip() != .SUCCESS) fatal("Roundtrip failed.", .{});
 
-pub fn run(loop: *Loop) !void {
-    while (wm.running) {
-        while (!loop.display.prepareRead()) {
-            if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
-        }
+    Delta.init(
+        init.gpa,
+        init.io,
+        child_env,
+        globals.window_manager orelse
+            fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
+        globals.xkb_bindings orelse
+            fatal("river_xkb_bindings_v1 not supported by the Wayland server.", .{}),
+        globals.layer_shell,
+    );
 
-        if (loop.display.flush() != .SUCCESS) {
-            loop.display.cancelRead();
-            return error.FlushFailed;
-        }
-
-        const n = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
-            loop.display.cancelRead();
-            return err;
-        };
-
-        if (n > 0 and loop.fds[wayland_fd].revents & posix.POLL.IN != 0) {
-            if (loop.display.readEvents() != .SUCCESS) return error.ReadFailed;
-        } else {
-            loop.display.cancelRead();
-        }
-
-        if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
-
-        if (loop.fds[signal_fd].revents & posix.POLL.IN != 0) loop.readSignals();
-
-        wm.tick();
-
-        if (wm.dirty) {
-            wm.dirty = false;
-            wm.obj.manageDirty();
-        }
+    if (globals.layer_shell == null) {
+        std.log.warn("river_layer_shell_v1 unavailable; layer surfaces will be closed", .{});
     }
+
+    var loop = try Loop.init(display);
+    defer loop.deinit();
+
+    try loop.run();
+
+    std.log.info("delta exiting", .{});
 }
 
-fn readSignals(loop: *Loop) void {
-    var info: std.os.linux.signalfd_siginfo = undefined;
-    const bytes = std.mem.asBytes(&info);
+fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *Globals) void {
+    switch (event) {
+        .global => |ev| {
+            if (std.mem.orderZ(u8, river.WindowManagerV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_window_manager_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, wm_version,
+                });
+                if (ev.version < wm_version) {
+                    fatal("Expected river wm version to be at least {d}.", .{wm_version});
+                }
+                const wm_obj = registry.bind(ev.name, river.WindowManagerV1, wm_version) catch
+                    fatal("Out of memory.", .{});
+                globals.window_manager = wm_obj;
 
-    while (true) {
-        const n = posix.read(loop.signals, bytes) catch |err| switch (err) {
-            error.WouldBlock => return,
-            else => {
-                log.err("failed to read signal: {s}", .{@errorName(err)});
-                return;
-            },
-        };
-        if (n != bytes.len) return;
-
-        switch (info.signo) {
-            posix.SIG.INT, posix.SIG.TERM => {
-                log.info("caught signal {d}, shutting down", .{info.signo});
-                wm.obj.stop();
-            },
-            posix.SIG.HUP => log.info("caught SIGHUP (config reload is not implemented yet)", .{}),
-            else => {},
-        }
+                wm_obj.setListener(?*anyopaque, Delta.listener, null);
+            } else if (std.mem.orderZ(u8, river.LayerShellV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_layer_shell_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, layer_shell_version,
+                });
+                if (ev.version >= layer_shell_version) {
+                    globals.layer_shell = registry.bind(
+                        ev.name,
+                        river.LayerShellV1,
+                        layer_shell_version,
+                    ) catch fatal("Out of memory.", .{});
+                }
+            } else if (std.mem.orderZ(u8, river.XkbBindingsV1.interface.name, ev.interface) == .eq) {
+                std.log.info("river_xkb_bindings_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, xkb_bindings_version,
+                });
+                if (ev.version < xkb_bindings_version) {
+                    fatal("Expected river_xkb_bindings_v1 to be at least v{d}.", .{xkb_bindings_version});
+                }
+                globals.xkb_bindings = registry.bind(
+                    ev.name,
+                    river.XkbBindingsV1,
+                    xkb_bindings_version,
+                ) catch fatal("Out of memory.", .{});
+            }
+        },
+        else => {},
     }
 }
