@@ -30,4 +30,13 @@ pub const Direction = enum {
     right,
     up,
     down,
+
+    pub fn delta(dir: Direction, step: i32) Point {
+        return switch (dir) {
+            .left => .{ .x = -step, .y = 0 },
+            .right => .{ .x = step, .y = 0 },
+            .up => .{ .x = 0, .y = -step },
+            .down => .{ .x = 0, .y = step },
+        };
+    }
 };

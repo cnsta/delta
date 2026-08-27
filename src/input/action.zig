@@ -18,8 +18,7 @@ pub const Action = union(enum) {
     send_to_workspace: Workspace.Id,
     pointer_move,
     pointer_resize,
-
-    resize: geom.Point,
+    resize: geom.Direction,
 
     exit,
 
@@ -34,7 +33,7 @@ pub const Action = union(enum) {
             .send_to_workspace => |id| seat.sendToWorkspace(id),
             .pointer_move => seat.startPointerMove(),
             .pointer_resize => seat.startPointerResize(),
-            .resize => |unit| seat.resizeBy(unit),
+            .resize => |dir| seat.resizeDirection(dir),
             .exit => wm.obj.exitSession(),
         }
     }

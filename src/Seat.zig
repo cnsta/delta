@@ -225,10 +225,11 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     if (ws.windowInDirection(window, dir)) |target| seat.focus(target);
 }
 
-pub fn resizeBy(seat: *Seat, unit: geom.Point) void {
+pub fn resizeDirection(seat: *Seat, dir: geom.Direction) void {
     const window = seat.focused orelse return;
+    const d = dir.delta(rules.resize_step);
 
-    Eddy.resize(window, unit.x * rules.resize_step, unit.y * rules.resize_step);
+    Eddy.resize(window, d.x, d.y);
 }
 
 pub fn startPointerMove(seat: *Seat) void {
@@ -361,34 +362,20 @@ fn setupDefaultBindings(seat: *Seat) void {
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .n, .focus_next);
 
-    const orthogonal = .{
-        .{ @as(u32, 0xff51), xkb.Keysym.h, geom.Direction.left, geom.Point{ .x = -1, .y = 0 } },
-        .{ @as(u32, 0xff53), xkb.Keysym.l, geom.Direction.right, geom.Point{ .x = 1, .y = 0 } },
-        .{ @as(u32, 0xff52), xkb.Keysym.k, geom.Direction.up, geom.Point{ .x = 0, .y = -1 } },
-        .{ @as(u32, 0xff54), xkb.Keysym.j, geom.Direction.down, geom.Point{ .x = 0, .y = 1 } },
-    };
+    const arrows = [4]u32{ 0xff51, 0xff53, 0xff52, 0xff54 };
+    const letters = [4]xkb.Keysym{ .h, .l, .k, .j };
+    const dirs = [4]geom.Direction{ .left, .right, .up, .down };
 
-    inline for (orthogonal) |entry| {
-        const arrow: xkb.Keysym = @enumFromInt(entry[0]);
-        const letter = entry[1];
+    inline for (arrows, letters, dirs) |arrow, letter, dir| {
+        const key: xkb.Keysym = @enumFromInt(arrow);
 
-        XkbBinding.create(seat, super, arrow, .{ .focus_direction = entry[2] });
-        XkbBinding.create(seat, super, letter, .{ .focus_direction = entry[2] });
+        XkbBinding.create(seat, super, key, .{ .focus_direction = dir });
+        XkbBinding.create(seat, super, letter, .{ .focus_direction = dir });
 
-        XkbBinding.create(seat, super_ctrl, arrow, .{ .resize = entry[3] });
-        XkbBinding.create(seat, super_ctrl, letter, .{ .resize = entry[3] });
+        XkbBinding.create(seat, super_ctrl, key, .{ .resize = dir });
+        XkbBinding.create(seat, super_ctrl, letter, .{ .resize = dir });
     }
 
-    const diagonal = .{
-        .{ xkb.Keysym.y, geom.Point{ .x = -1, .y = -1 } },
-        .{ xkb.Keysym.u, geom.Point{ .x = 1, .y = -1 } },
-        .{ xkb.Keysym.b, geom.Point{ .x = -1, .y = 1 } },
-        .{ xkb.Keysym.n, geom.Point{ .x = 1, .y = 1 } },
-    };
-
-    inline for (diagonal) |entry| {
-        XkbBinding.create(seat, super_ctrl, entry[0], .{ .resize = entry[1] });
-    }
     XkbBinding.create(seat, super, .Escape, .exit);
 
     inline for (1..10) |n| {
