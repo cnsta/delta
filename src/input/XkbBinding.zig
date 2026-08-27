@@ -68,9 +68,11 @@ pub fn destroy(binding: *XkbBinding) void {
 fn listener(_: *river.XkbBindingV1, event: river.XkbBindingV1.Event, binding: *XkbBinding) void {
     switch (event) {
         .pressed => {
-            log.info("xkb binding pressed -> {s}", .{@tagName(binding.action)});
             binding.seat.pending_action = binding.action;
+            binding.seat.beginRepeat(binding);
         },
-        else => {},
+
+        .released => binding.seat.endRepeat(binding),
+        .stop_repeat => binding.seat.endRepeat(binding),
     }
 }
