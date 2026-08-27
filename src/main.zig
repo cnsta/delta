@@ -5,7 +5,11 @@ const river = wayland.client.river;
 const wl = wayland.client.wl;
 const fatal = std.process.fatal;
 
+const cli = @import("cli.zig");
 const Delta = @import("Delta.zig");
+const Loop = @import("Loop.zig");
+
+pub const std_options = @import("log.zig").std_options;
 
 const wm_version = 4;
 const xkb_bindings_version = 3;
@@ -17,8 +21,25 @@ const Globals = struct {
     layer_shell: ?*river.LayerShellV1 = null,
 };
 
+const child_environment = [_][2][]const u8{
+    .{ "XDG_CURRENT_DESKTOP", "river" },
+    .{ "XDG_SESSION_TYPE", "wayland" },
+    .{ "MOZ_ENABLE_WAYLAND", "1" },
+    .{ "_JAVA_AWT_WM_NONREPARENTING", "1" },
+};
+
 pub fn main(init: std.process.Init) !void {
+    const args = try init.args.toSlice(init.gpa);
+    defer init.gpa.free(args);
+
+    if (cli.parse(args[1..]).exit) |code| std.process.exit(code);
+
+    std.log.info("delta {s} starting", .{cli.version});
     std.log.info("PATH={s}", .{init.environ_map.get("PATH") orelse "<unset>"});
+
+    var child_env = try init.environ_map.clone(init.gpa);
+    defer child_env.deinit();
+    for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
 
     const display = try wl.Display.connect(null);
     defer display.disconnect();
@@ -32,6 +53,7 @@ pub fn main(init: std.process.Init) !void {
     Delta.init(
         init.gpa,
         init.io,
+        child_env,
         globals.window_manager orelse
             fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
         globals.xkb_bindings orelse
@@ -43,9 +65,12 @@ pub fn main(init: std.process.Init) !void {
         std.log.warn("river_layer_shell_v1 unavailable; layer surfaces will be closed", .{});
     }
 
-    while (true) {
-        if (display.dispatch() != .SUCCESS) fatal("Dispatch failed.", .{});
-    }
+    var loop = try Loop.init(display);
+    defer loop.deinit();
+
+    try loop.run();
+
+    std.log.info("delta exiting", .{});
 }
 
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *Globals) void {
