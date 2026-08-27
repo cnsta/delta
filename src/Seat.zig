@@ -351,13 +351,13 @@ fn setupDefaultBindings(seat: *Seat) void {
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
     const super_ctrl: river.SeatV1.Modifiers = .{ .mod4 = true, .ctrl = true };
 
-    XkbBinding.create(seat, super, .t, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/ghostty"} });
-    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"/etc/profiles/per-user/cnst/bin/fuzzel"} });
-    XkbBinding.create(seat, super, .w, .{ .spawn = &.{"/run/current-system/sw/bin/zen"} });
-    XkbBinding.create(seat, super_shift, .w, .{ .spawn = &.{ "/run/current-system/sw/bin/zen", "--private-window" } });
-    XkbBinding.create(seat, super, .e, .{ .spawn = &.{"/run/current-system/sw/bin/nautilus"} });
-    XkbBinding.create(seat, super_shift, .l, .{ .spawn = &.{"/run/current-system/sw/bin/waylock"} });
-    XkbBinding.create(seat, super, .i, .{ .spawn = &.{"/run/current-system/sw/bin/byt"} });
+    XkbBinding.create(seat, super, .t, .{ .spawn = &.{"ghostty"} });
+    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"fuzzel"} });
+    XkbBinding.create(seat, super, .w, .{ .spawn = &.{"zen"} });
+    XkbBinding.create(seat, super_shift, .w, .{ .spawn = &.{ "zen", "--private-window" } });
+    XkbBinding.create(seat, super, .e, .{ .spawn = &.{"nautilus"} });
+    XkbBinding.create(seat, super_shift, .l, .{ .spawn = &.{"waylock"} });
+    XkbBinding.create(seat, super, .i, .{ .spawn = &.{"byt"} });
 
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .n, .focus_next);
