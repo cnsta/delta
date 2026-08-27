@@ -50,8 +50,8 @@ pub const PointerRequest = union(enum) {
     resize: struct { seat: *Seat },
 };
 
-pub const border_focused = color.rgb(0x7a, 0xa2, 0xf7);
-pub const border_inactive = color.rgb(0x41, 0x48, 0x68);
+pub const border_focused = color.rgb(0x4c, 0x7a, 0x5d);
+pub const border_inactive = color.rgb(0x50, 0x49, 0x45);
 
 pub const capabilities: river.WindowV1.Capabilities = .{
     .window_menu = false,
