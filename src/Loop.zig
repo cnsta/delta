@@ -26,6 +26,13 @@ pub fn init(display: *wl.Display) !Loop {
     posix.sigaddset(&mask, posix.SIG.HUP);
     posix.sigprocmask(posix.SIG.BLOCK, &mask, null);
 
+    const ignore: posix.Sigaction = .{
+        .handler = .{ .handler = posix.SIG.IGN },
+        .mask = posix.sigemptyset(),
+        .flags = 0,
+    };
+    posix.sigaction(posix.SIG.PIPE, &ignore, null);
+
     var act: posix.Sigaction = .{
         .handler = .{ .handler = posix.SIG.DFL },
         .mask = posix.sigemptyset(),

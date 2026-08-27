@@ -2,6 +2,7 @@ const std = @import("std");
 
 const wm = &@import("../Delta.zig").instance;
 const geom = @import("../util/geom.zig");
+const spawn = @import("../spawn.zig").spawn;
 
 const Seat = @import("../Seat.zig");
 const Workspace = @import("../Workspace.zig");
@@ -46,12 +47,3 @@ pub const Action = union(enum) {
         }
     }
 };
-
-fn spawn(argv: []const []const u8) void {
-    std.debug.assert(argv.len > 0);
-
-    log.info("spawning {s}", .{argv[0]});
-    _ = std.process.spawn(wm.io, .{ .argv = argv }) catch |err| {
-        log.err("failed to spawn {s}: {s}", .{ argv[0], @errorName(err) });
-    };
-}
