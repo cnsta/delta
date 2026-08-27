@@ -332,7 +332,14 @@ fn setupDefaultBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
 
-    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"foot"} });
+    XkbBinding.create(seat, super, .t, .{ .spawn = &.{"ghostty"} });
+    XkbBinding.create(seat, super, .space, .{ .spawn = &.{"fuzzel"} });
+    XkbBinding.create(seat, super, .w, .{ .spawn = &.{"zen"} });
+    XkbBinding.create(seat, super_shift, .w, .{ .spawn = &.{ "zen", "--private-window" } });
+    XkbBinding.create(seat, super, .e, .{ .spawn = &.{"nautilus"} });
+    XkbBinding.create(seat, super_shift, .l, .{ .spawn = &.{"waylock"} });
+    XkbBinding.create(seat, super, .i, .{ .spawn = &.{"byt"} });
+
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .n, .focus_next);
     XkbBinding.create(seat, super, .Escape, .exit);
@@ -362,7 +369,11 @@ fn shellListener(
 fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
     switch (event) {
         .removed => seat.removed = true,
-        .pointer_enter => |args| seat.hovered = if (args.window) |w| Window.fromObj(w) else null,
+        .pointer_enter => |args| {
+            seat.hovered = if (args.window) |w| Window.fromObj(w) else null;
+
+            seat.interacted = seat.hovered;
+        },
         .pointer_leave => seat.hovered = null,
         .window_interaction => |args| seat.interacted = if (args.window) |w| Window.fromObj(w) else null,
         .op_delta => |args| {
