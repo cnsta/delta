@@ -20,8 +20,8 @@ stdenv.mkDerivation (finalAttrs: {
     domain = "git.cnst.dev";
     owner = "cnst";
     repo = "delta";
-    rev = "b2ebcf8796aa4f0d09d269dc170c21c9d1b5794a";
-    hash = "sha256-Hym5KFttgaEsTb9+7n/jj1tQ0Qj99+5PAjg1sq6vEOI=";
+    rev = "4e5cfb6cf949dc950bc32ad5006b07e740f17a56";
+    hash = "sha256-gRwurPA+KLb/Gie2mL1aNuPD3rC0JzHw17D9awZgrXA=";
   };
 
   deps = callPackage ./build.zig.zon.nix {};
