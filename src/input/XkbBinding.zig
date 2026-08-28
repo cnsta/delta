@@ -46,7 +46,7 @@ pub fn create(
     binding.obj.setListener(*XkbBinding, listener, binding);
 
     const mods_bits: u32 = @bitCast(mods);
-    log.info("xkb binding: keysym 0x{x} mods 0x{x} -> {s}", .{
+    log.debug("xkb binding: keysym 0x{x} mods 0x{x} -> {s}", .{
         @intFromEnum(keysym), mods_bits, @tagName(action),
     });
 }
@@ -56,7 +56,11 @@ pub fn setEnabled(binding: *XkbBinding, on: bool) void {
 
     if (on) binding.obj.enable() else binding.obj.disable();
     binding.enabled = on;
-    log.info("xkb binding {s}: {s}", .{ if (on) "enabled" else "disabled", @tagName(binding.action) });
+
+    log.debug("xkb binding {s}: {s}", .{
+        if (on) "enabled" else "disabled",
+        @tagName(binding.action),
+    });
 }
 
 pub fn destroy(binding: *XkbBinding) void {
@@ -68,11 +72,12 @@ pub fn destroy(binding: *XkbBinding) void {
 fn listener(_: *river.XkbBindingV1, event: river.XkbBindingV1.Event, binding: *XkbBinding) void {
     switch (event) {
         .pressed => {
-            binding.seat.pending_action = binding.action;
+            if (!binding.seat.pending.push(binding.action)) {
+                log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
+            }
             binding.seat.beginRepeat(binding);
         },
 
-        .released => binding.seat.endRepeat(binding),
-        .stop_repeat => binding.seat.endRepeat(binding),
+        .released, .stop_repeat => binding.seat.endRepeat(binding),
     }
 }
