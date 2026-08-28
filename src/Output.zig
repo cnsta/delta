@@ -140,7 +140,6 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
         },
 
         .wl_output => {},
-        .capture_sessions => {},
     }
 }
 
