@@ -83,9 +83,6 @@ pub fn identifier(window: *const Window) []const u8 {
     return window.identifier_buf[0..window.identifier_len];
 }
 
-pub const border_focused = color.rgb(0x4c, 0x7a, 0x5d);
-pub const border_inactive = color.rgb(0x50, 0x49, 0x45);
-
 const max_overshoot = 64;
 
 pub const capabilities: river.WindowV1.Capabilities = .{
@@ -391,10 +388,14 @@ pub fn syncDecoration(window: *Window) void {
         if (applied == is_focused) return;
     }
 
-    const c = if (is_focused) border_focused else border_inactive;
+    const c = if (is_focused)
+        color.hex(wm.config.border.focused)
+    else
+        color.hex(wm.config.border.inactive);
+
     window.obj.setBorders(
         .{ .top = true, .bottom = true, .left = true, .right = true },
-        rules.border_width,
+        wm.config.border.width,
         c.r,
         c.g,
         c.b,
@@ -407,7 +408,7 @@ fn syncNewFocus(window: *Window) void {
     // TODO: multi-seat
     const seat = wm.seats.first() orelse return;
 
-    if (!Seat.focus_new_windows) {
+    if (!wm.config.input.focus_new_windows) {
         const previous = seat.focused orelse return;
         seat.dropFocus();
         seat.focus(previous);
@@ -417,7 +418,8 @@ fn syncNewFocus(window: *Window) void {
     if (!window.visible()) return;
 
     seat.focus(window);
-    if (Seat.warp_on_new_window) seat.warpTo(window);
+
+    if (Seat.warpOnSpawn()) seat.warpTo(window);
 }
 
 pub fn visible(window: *const Window) bool {

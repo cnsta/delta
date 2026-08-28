@@ -37,6 +37,10 @@ stdenv.mkDerivation (finalAttrs: {
     "-Doptimize=ReleaseSafe"
   ];
 
+  doCheck = true;
+
+  zigCheckFlags = finalAttrs.zigBuildFlags;
+
   meta = {
     homepage = "https://git.cnst.dev/cnst/delta";
     description = "A window manager for river";

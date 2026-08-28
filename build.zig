@@ -41,12 +41,14 @@ pub fn build(b: *std.Build) void {
     });
 
     exe.root_module.linkSystemLibrary("wayland-client", .{});
+    exe.root_module.linkSystemLibrary("xkbcommon", .{});
     b.installArtifact(exe);
 
     const run_step = b.step("run", "Run delta");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
     run_cmd.step.dependOn(b.getInstallStep());
+    if (b.args) |args| run_cmd.addArgs(args);
 
     const test_step = b.step("test", "Run unit tests");
     const tests = b.addTest(.{ .root_module = exe.root_module });

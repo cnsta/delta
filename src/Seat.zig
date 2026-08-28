@@ -18,8 +18,10 @@ const PointerBinding = @import("input/PointerBinding.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
 const XkbBinding = @import("input/XkbBinding.zig");
+const Config = @import("Config.zig");
 
 const Seat = @This();
+const log = std.log.scoped(.seat);
 
 obj: *river.SeatV1,
 removed: bool = false,
@@ -51,13 +53,6 @@ pointer: geom.Point = geom.Point.zero,
 pointer_known: bool = false,
 
 output: ?*Output = null,
-
-pub const warp_on_focus = true;
-pub const focus_new_windows = true;
-pub const warp_on_new_window = true;
-
-pub const repeat_delay_ms = 400;
-pub const repeat_rate_ms = 40;
 
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
@@ -96,10 +91,7 @@ pub fn create(river_seat: *river.SeatV1) void {
         shell.setListener(*Seat, shellListener, seat);
     }
 
-    seat.setupDefaultBindings();
-    std.log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
-        seat.xkb_bindings.length(), seat.pointer_bindings.length(),
-    });
+    seat.setupBindings();
 }
 
 pub fn fromObj(obj: *river.SeatV1) *Seat {
@@ -260,7 +252,7 @@ pub fn applyWarp(seat: *Seat) void {
     const ws = window.workspace orelse return;
     const topleft = ws.origin() orelse return;
 
-    if (!warp_on_focus) {
+    if (!warpOnFocus()) {
         seat.output = ws.output;
         return;
     }
@@ -304,7 +296,7 @@ pub fn tick(seat: *Seat, now: i64) void {
 
     _ = seat.pending.push(binding.action);
 
-    seat.repeat_at = now + repeat_rate_ms;
+    seat.repeat_at = now + wm.config.input.repeat_rate_ms;
     wm.dirty = true;
 }
 
@@ -420,7 +412,7 @@ pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
     const window = seat.focused orelse return;
 
     if (window.fullscreen != null) return;
-    const step = rules.resize_step;
+    const step = rules.resizeStep();
 
     if (window.floating) {
         switch (how) {
@@ -478,7 +470,7 @@ pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
     if (!binding.action.repeats()) return;
 
     seat.repeat_binding = binding;
-    seat.repeat_at = wm.millis() + repeat_delay_ms;
+    seat.repeat_at = wm.millis() + wm.config.input.repeat_delay_ms;
 }
 
 pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
@@ -487,8 +479,81 @@ pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
 
 // -- setup and listeners -----------------------------------------------
 
-/// Hardcoded for now.
-fn setupDefaultBindings(seat: *Seat) void {
+fn modifiers(mods: []const Config.Modifier) river.SeatV1.Modifiers {
+    var result: river.SeatV1.Modifiers = .{};
+
+    for (mods) |mod| switch (mod) {
+        .shift => result.shift = true,
+        .ctrl => result.ctrl = true,
+        .alt => result.mod1 = true,
+        .super => result.mod4 = true,
+        .mod3 => result.mod3 = true,
+        .mod5 => result.mod5 = true,
+    };
+
+    return result;
+}
+
+fn buttonCode(button: Config.PointerBinding.Button) u32 {
+    return switch (button) {
+        .left => event_codes.BTN_LEFT,
+        .right => event_codes.BTN_RIGHT,
+        .middle => event_codes.BTN_MIDDLE,
+        .side => event_codes.BTN_SIDE,
+        .extra => event_codes.BTN_EXTRA,
+    };
+}
+
+pub fn warpOnFocus() bool {
+    return wm.config.input.cursor.warp != .none;
+}
+
+pub fn warpOnSpawn() bool {
+    return wm.config.input.cursor.warp == .spawn;
+}
+
+fn setupBindings(seat: *Seat) void {
+    if (wm.config.bindings) |bindings| {
+        for (bindings) |binding| {
+            const mods = modifiers(binding.mods);
+
+            for (binding.keys) |name| {
+                const key = Config.keysym(name) orelse continue;
+                XkbBinding.create(seat, mods, key, binding.action);
+            }
+        }
+    } else {
+        seat.setupDefaultKeyBindings();
+    }
+
+    if (wm.config.pointer_bindings) |bindings| {
+        for (bindings) |binding| {
+            PointerBinding.create(
+                seat,
+                modifiers(binding.mods),
+                buttonCode(binding.button),
+                binding.action,
+            );
+        }
+    } else {
+        seat.setupDefaultPointerBindings();
+    }
+
+    log.info("seat ready, {d} key bindings, {d} pointer bindings", .{
+        seat.xkb_bindings.length(), seat.pointer_bindings.length(),
+    });
+}
+
+pub fn reloadBindings(seat: *Seat) void {
+    seat.repeat_binding = null;
+
+    while (seat.xkb_bindings.first()) |binding| binding.destroy();
+    while (seat.pointer_bindings.first()) |binding| binding.destroy();
+
+    seat.setupBindings();
+}
+
+fn setupDefaultKeyBindings(seat: *Seat) void {
     const super: river.SeatV1.Modifiers = .{ .mod4 = true };
     const super_shift: river.SeatV1.Modifiers = .{ .mod4 = true, .shift = true };
 
@@ -546,6 +611,10 @@ fn setupDefaultBindings(seat: *Seat) void {
         XkbBinding.create(seat, super, keysym, .{ .focus_workspace = n });
         XkbBinding.create(seat, super_shift, keysym, .{ .send_to_workspace = n });
     }
+}
+
+fn setupDefaultPointerBindings(seat: *Seat) void {
+    const super: river.SeatV1.Modifiers = .{ .mod4 = true };
 
     PointerBinding.create(seat, super, event_codes.BTN_LEFT, .pointer_move);
     PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .pointer_resize);
@@ -569,7 +638,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         .pointer_enter => |args| {
             seat.hovered = if (args.window) |w| Window.fromObj(w) else null;
 
-            seat.interacted = seat.hovered;
+            if (wm.config.input.focus_follows_pointer) seat.interacted = seat.hovered;
         },
         .pointer_leave => seat.hovered = null,
         .window_interaction => |args| seat.interacted = if (args.window) |w| Window.fromObj(w) else null,
@@ -578,12 +647,10 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
             seat.op_dy = args.dy;
         },
         .op_release => seat.op_release = true,
-
         .pointer_position => |args| {
             seat.pointer = .{ .x = args.x, .y = args.y };
             seat.pointer_known = true;
         },
-
         .wl_seat => {},
         .shell_surface_interaction => {},
     }

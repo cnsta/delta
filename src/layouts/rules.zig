@@ -1,22 +1,24 @@
 const std = @import("std");
 
 const geom = @import("../util/geom.zig");
+const wm = &@import("../Delta.zig").instance;
 
 const Output = @import("../Output.zig");
 
-pub const Gaps = struct {
-    between: i32 = 8,
-    edge: i32 = 8,
-};
+pub fn between() i32 {
+    return wm.config.gaps.between;
+}
 
-pub const gaps: Gaps = .{};
-pub const border_width = 2;
-pub const resize_step = 32;
+fn edge() i32 {
+    return wm.config.gaps.edge;
+}
 
-comptime {
-    if (@rem(gaps.between, 2) != 0) {
-        @compileError("rules.gaps.between must be even so it can be split across two edges");
-    }
+pub fn borderWidth() i32 {
+    return wm.config.border.width;
+}
+
+pub fn resizeStep() i32 {
+    return wm.config.layout.resize_step;
 }
 
 pub const Limits = struct {
@@ -43,16 +45,19 @@ pub const Placement = struct {
 
 pub fn workArea(output: *const Output) geom.Rect {
     const usable = output.usableArea();
+    const outer = edge();
+
     return .{
-        .x = usable.x - output.x + gaps.edge,
-        .y = usable.y - output.y + gaps.edge,
-        .width = @max(1, usable.width - 2 * gaps.edge),
-        .height = @max(1, usable.height - 2 * gaps.edge),
+        .x = usable.x - output.x + outer,
+        .y = usable.y - output.y + outer,
+        .width = @max(1, usable.width - 2 * outer),
+        .height = @max(1, usable.height - 2 * outer),
     };
 }
 
 pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
-    const half = @divExact(gaps.between, 2);
+    const half = @divExact(between(), 2);
+    const border = borderWidth();
 
     const tiled: Edges = .{
         .left = !sticks(box.x, area.x),
@@ -61,10 +66,10 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
         .bottom = !sticks(box.y + box.height, area.y + area.height),
     };
 
-    const left = border_width + if (tiled.left) half else 0;
-    const top = border_width + if (tiled.top) half else 0;
-    const right = border_width + if (tiled.right) half else 0;
-    const bottom = border_width + if (tiled.bottom) half else 0;
+    const left = border + if (tiled.left) half else 0;
+    const top = border + if (tiled.top) half else 0;
+    const right = border + if (tiled.right) half else 0;
+    const bottom = border + if (tiled.bottom) half else 0;
 
     var content: geom.Rect = .{
         .x = box.x + left,
@@ -92,8 +97,9 @@ pub fn placeFloating(box: geom.Rect, area: geom.Rect, limits: Limits) Placement 
 }
 
 fn keepReachable(content: *geom.Rect, area: geom.Rect) void {
-    const show_x = std.math.clamp(@divTrunc(content.width, 4), 10, 75) + border_width;
-    const show_y = std.math.clamp(@divTrunc(content.height, 4), 10, 75) + border_width;
+    const border = borderWidth();
+    const show_x = std.math.clamp(@divTrunc(content.width, 4), 10, 75) + border;
+    const show_y = std.math.clamp(@divTrunc(content.height, 4), 10, 75) + border;
 
     content.x = std.math.clamp(
         content.x,
@@ -131,19 +137,26 @@ fn sticks(a: i32, b: i32) bool {
     return @abs(a - b) <= 1;
 }
 
+fn useDefaultConfig() void {
+    wm.config = .{};
+}
+
 test "place gives equal gaps regardless of how the area was divided" {
+    useDefaultConfig();
+    const border = borderWidth();
+
     const area: geom.Rect = .{ .x = 10, .y = 10, .width = 200, .height = 100 };
 
     const left = place(.{ .x = 10, .y = 10, .width = 100, .height = 100 }, area, .{});
     const right = place(.{ .x = 110, .y = 10, .width = 100, .height = 100 }, area, .{});
 
-    const left_border_end = left.content.x + left.content.width + border_width;
-    const right_border_start = right.content.x - border_width;
-    try std.testing.expectEqual(gaps.between, right_border_start - left_border_end);
+    const left_border_end = left.content.x + left.content.width + border;
+    const right_border_start = right.content.x - border;
+    try std.testing.expectEqual(between(), right_border_start - left_border_end);
 
-    try std.testing.expectEqual(area.x + border_width, left.content.x);
+    try std.testing.expectEqual(area.x + border, left.content.x);
     try std.testing.expectEqual(
-        area.x + area.width - border_width,
+        area.x + area.width - border,
         right.content.x + right.content.width,
     );
 
@@ -153,6 +166,8 @@ test "place gives equal gaps regardless of how the area was divided" {
 }
 
 test "keepReachable leaves a grabbable strip on screen" {
+    useDefaultConfig();
+
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 1000, .height = 1000 };
 
     const off_right = placeFloating(.{ .x = 5000, .y = 100, .width = 400, .height = 300 }, area, .{});
@@ -167,6 +182,8 @@ test "keepReachable leaves a grabbable strip on screen" {
 }
 
 test "sticks absorbs the pixel lost to integer subdivision" {
+    useDefaultConfig();
+
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 101 };
 
     const lower = place(.{ .x = 0, .y = 50, .width = 100, .height = 50 }, area, .{});
@@ -175,6 +192,8 @@ test "sticks absorbs the pixel lost to integer subdivision" {
 }
 
 test "clamp centres a window that cannot shrink to its box" {
+    useDefaultConfig();
+
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 400, .height = 400 };
     const box: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 400 };
 

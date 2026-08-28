@@ -6,13 +6,17 @@ const wl = wayland.client.wl;
 
 const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
+const spawn = @import("spawn.zig").spawn;
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
+const Config = @import("Config.zig");
 
 const Delta = @This();
+
+const log = std.log.scoped(.default);
 
 pub var instance: Delta = undefined;
 
@@ -29,6 +33,9 @@ seats: wl.list.Head(Seat, .link),
 workspaces: wl.list.Head(Workspace, .link),
 
 child_env: std.process.Environ.Map,
+config: Config,
+config_arena: std.heap.ArenaAllocator,
+config_path: ?[]const u8 = null,
 
 default_output: ?*Output = null,
 
@@ -45,6 +52,8 @@ pub fn init(
     gpa: std.mem.Allocator,
     io: std.Io,
     child_env: std.process.Environ.Map,
+    loaded: Config.Loaded,
+    config_path: ?[]const u8,
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
@@ -53,6 +62,10 @@ pub fn init(
         .gpa = gpa,
         .io = io,
         .child_env = child_env,
+
+        .config = loaded.config,
+        .config_arena = loaded.arena,
+        .config_path = config_path,
 
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
@@ -149,6 +162,76 @@ fn renderStart(delta: *Delta) void {
     while (it.next()) |window| window.center();
 
     delta.obj.renderFinish();
+}
+
+pub fn reload(delta: *Delta) void {
+    const path = delta.config_path orelse {
+        log.warn("no config path, nothing to reload", .{});
+        return;
+    };
+
+    var report: ?[]const u8 = null;
+    defer if (report) |r| delta.gpa.free(r);
+
+    const parsed = Config.load(delta.gpa, delta.io, path, &report) catch {
+        log.err("out of memory reloading {s}", .{path});
+        return;
+    };
+
+    if (parsed) |next| {
+        var old = delta.config_arena;
+        delta.config = next.config;
+        delta.config_arena = next.arena;
+        old.deinit();
+
+        var it = list.safeIterator(Seat, .link, &delta.seats);
+        while (it.next()) |seat| seat.reloadBindings();
+
+        delta.dirty = true;
+
+        log.info("reloaded {s}", .{path});
+        return;
+    }
+
+    const message = report orelse return;
+    log.err("{s}: {s}", .{ path, message });
+    log.err("keeping the running configuration", .{});
+
+    delta.reportConfigError(message);
+}
+
+pub fn deinit(delta: *Delta) void {
+    while (delta.seats.first()) |seat| {
+        seat.removed = true;
+        seat.maybeDestroy();
+    }
+    while (delta.windows.first()) |window| {
+        window.closed = true;
+        window.maybeDestroy();
+    }
+    while (delta.outputs.first()) |output| {
+        output.removed = true;
+        output.maybeDestroy();
+    }
+    while (delta.workspaces.first()) |ws| {
+        ws.output = null;
+        ws.maybeDestroy();
+    }
+
+    delta.config_arena.deinit();
+}
+
+fn reportConfigError(delta: *Delta, message: []const u8) void {
+    const command = delta.config.on_error orelse return;
+    if (command.len == 0) return;
+
+    const argv = delta.gpa.alloc([]const u8, command.len + 1) catch return;
+    defer delta.gpa.free(argv);
+
+    @memcpy(argv[0..command.len], command);
+    argv[command.len] = message;
+
+    spawn(argv);
 }
 
 pub fn requestStop(delta: *Delta) void {

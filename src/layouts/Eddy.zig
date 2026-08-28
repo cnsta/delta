@@ -11,8 +11,6 @@ const Eddy = @This();
 
 root: ?Node = null,
 
-pub const split_bias: f32 = 1.0;
-
 pub const Split = enum { vertical, horizontal };
 
 pub const Node = union(enum) {
@@ -68,9 +66,10 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
     const parent = target.branch;
     const index = if (parent) |p| indexOf(p, .{ .window = target }) else 0;
 
+    const bias = wm.config.layout.split_bias;
     const box = target.slot;
     const split: Split = if (@as(f32, @floatFromInt(box.width)) >
-        @as(f32, @floatFromInt(box.height)) * split_bias)
+        @as(f32, @floatFromInt(box.height)) * bias)
         .vertical
     else
         .horizontal;
@@ -245,7 +244,7 @@ fn minExtent(node: Node, axis: Split) i32 {
                 .vertical => w.limits.min.width,
                 .horizontal => w.limits.min.height,
             };
-            return @max(min_pane, wanted + 2 * rules.border_width + rules.gaps.between);
+            return @max(min_pane, wanted + 2 * rules.borderWidth() + rules.between());
         },
         .branch => |b| {
             const first = minExtent(b.children[0], axis);

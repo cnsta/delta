@@ -6,6 +6,7 @@ const wl = wayland.client.wl;
 const fatal = std.process.fatal;
 
 const cli = @import("cli.zig");
+const Config = @import("Config.zig");
 const Delta = @import("Delta.zig");
 const Loop = @import("Loop.zig");
 
@@ -41,6 +42,11 @@ pub fn main(init: std.process.Init) !void {
     defer child_env.deinit();
     for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
 
+    const config_path = try Config.defaultPath(init.gpa, init.environ_map);
+    defer if (config_path) |path| init.gpa.free(path);
+
+    const loaded = try loadConfig(init.gpa, init.io, config_path);
+
     const display = try wl.Display.connect(null);
     defer display.disconnect();
 
@@ -54,6 +60,8 @@ pub fn main(init: std.process.Init) !void {
         init.gpa,
         init.io,
         child_env,
+        loaded,
+        config_path,
         globals.window_manager orelse
             fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
         globals.xkb_bindings orelse
@@ -69,8 +77,41 @@ pub fn main(init: std.process.Init) !void {
     defer loop.deinit();
 
     try loop.run();
+    Delta.instance.deinit();
 
     std.log.info("delta exiting", .{});
+}
+
+fn loadConfig(gpa: std.mem.Allocator, io: std.Io, path: ?[]const u8) !Config.Loaded {
+    const defaults: Config.Loaded = .{
+        .arena = std.heap.ArenaAllocator.init(gpa),
+        .config = .{},
+    };
+
+    const real_path = path orelse {
+        std.log.info("no config path; XDG_CONFIG_HOME and HOME are both unset", .{});
+        return defaults;
+    };
+
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    if (try Config.load(gpa, io, real_path, &report)) |loaded| {
+        var unused = defaults;
+        unused.deinit();
+
+        std.log.info("loaded {s}", .{real_path});
+        return loaded;
+    }
+
+    if (report) |message| {
+        std.log.err("{s}: {s}", .{ real_path, message });
+        std.log.err("using built-in defaults", .{});
+    } else {
+        std.log.info("no config at {s}, using built-in defaults", .{real_path});
+    }
+
+    return defaults;
 }
 
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *Globals) void {

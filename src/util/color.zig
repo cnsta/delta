@@ -17,6 +17,15 @@ pub fn rgb(r: u8, g: u8, b: u8) Color {
     };
 }
 
+/// Opaque color from a packed 0xRRGGBB value, which is how a config writes one.
+pub fn hex(value: u24) Color {
+    return rgb(
+        @truncate(value >> 16),
+        @truncate(value >> 8),
+        @truncate(value),
+    );
+}
+
 /// Translucent color.
 pub fn rgba(r: u8, g: u8, b: u8, a: u8) Color {
     return .{
@@ -64,4 +73,10 @@ test rgba {
     const clear = rgba(0xff, 0xff, 0xff, 0x00);
     try std.testing.expectEqual(@as(u32, 0), clear.r);
     try std.testing.expectEqual(@as(u32, 0), clear.a);
+}
+
+test hex {
+    try std.testing.expectEqual(rgb(0x7a, 0xa2, 0xf7), hex(0x7aa2f7));
+    try std.testing.expectEqual(rgb(0, 0, 0), hex(0x000000));
+    try std.testing.expectEqual(rgb(0xff, 0xff, 0xff), hex(0xffffff));
 }

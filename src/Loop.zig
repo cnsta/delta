@@ -125,7 +125,7 @@ fn readSignals(loop: *Loop) void {
         const sig: posix.SIG = @enumFromInt(info.signo);
         switch (sig) {
             .INT, .TERM => wm.requestStop(),
-            .HUP => log.info("caught SIGHUP (config reload is not implemented yet)", .{}),
+            .HUP => wm.reload(),
             else => {},
         }
     }

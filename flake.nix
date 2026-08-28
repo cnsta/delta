@@ -59,7 +59,7 @@
 
     formatter = forAllPlatforms (pkgs: pkgs.alejandra);
 
-    nixosModules.river = import ./nix;
+    nixosModules.river = import ./nix/nixosModule.nix;
     nixosModules.default = self.nixosModules.river;
   };
 }
