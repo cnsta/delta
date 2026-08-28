@@ -47,6 +47,7 @@ tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
+tiled_informed: bool = false,
 
 overshoot: geom.Size = geom.Size.zero,
 
@@ -163,17 +164,15 @@ pub fn syncPosition(window: *Window) void {
 pub fn applyPlacement(window: *Window, p: rules.Placement) void {
     if (window.fullscreen != null) return;
 
-    if (window.tiled == null or !window.tiled.?.eql(p.tiled)) {
-        window.obj.setTiled(.{
-            .top = p.tiled.top,
-            .bottom = p.tiled.bottom,
-            .left = p.tiled.left,
-            .right = p.tiled.right,
-        });
-        window.tiled = p.tiled;
+    if (!window.tiled_informed) {
+        window.obj.setTiled(.{ .top = true, .bottom = true, .left = true, .right = true });
+        window.tiled_informed = true;
     }
 
     if (p.content.width != window.slot.width or p.content.height != window.slot.height) {
+        log.debug("propose {d}x{d} at {d},{d}", .{
+            p.content.width, p.content.height, p.content.x, p.content.y,
+        });
         window.overshoot = geom.Size.zero;
         window.proposed = p.content.size();
         window.obj.proposeDimensions(p.content.width, p.content.height);
@@ -250,7 +249,12 @@ fn syncSize(window: *Window) void {
     const short_w = @max(0, window.slot.width - window.width);
     const short_h = @max(0, window.slot.height - window.height);
     if (short_w == 0 and short_h == 0) return;
-    if (short_w > max_overshoot or short_h > max_overshoot) return;
+    if (short_w > max_overshoot or short_h > max_overshoot) {
+        log.debug("giving up: slot {d}x{d} actual {d}x{d}", .{
+            window.slot.width, window.slot.height, window.width, window.height,
+        });
+        return;
+    }
 
     if (short_w > 0) {
         window.overshoot.width = @min(max_overshoot, @max(window.overshoot.width * 2, short_w));
