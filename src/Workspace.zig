@@ -14,22 +14,22 @@ const Window = @import("Window.zig");
 
 const Workspace = @This();
 
-pub const Id = u32;
-
 id: Id,
-
 link: wl.list.Link,
 
 output: ?*Output = null,
 
 windows: wl.list.Head(Window, .workspace_link),
-
 layout: Eddy = .{},
+
+pub const Id = u32;
 
 pub fn get(id: Id) *Workspace {
     var it = wm.workspaces.iterator(.forward);
     while (it.next()) |ws| {
         if (ws.id == id) return ws;
+
+        // Sorted, so the first larger id is where this one belongs.
         if (ws.id > id) return insertBefore(&ws.link, id);
     }
     return insertBefore(&wm.workspaces.link, id);
@@ -48,6 +48,7 @@ pub fn firstUnmapped() *Workspace {
     return get(id);
 }
 
+/// TODO: multi-seat
 pub fn forNewWindow() *Workspace {
     if (wm.seats.first()) |seat| {
         if (seat.output) |output| return output.workspace;
@@ -66,30 +67,6 @@ pub fn maybeDestroy(ws: *Workspace) void {
     wm.gpa.destroy(ws);
 }
 
-pub fn isEmpty(ws: *const Workspace) bool {
-    return ws.windows.empty();
-}
-
-pub fn cursor(ws: *Workspace) ?geom.Point {
-    const seat = wm.seats.first() orelse return null;
-    if (!seat.pointer_known) return null;
-    const topleft = ws.origin() orelse return null;
-
-    return .{
-        .x = seat.pointer.x - topleft.x,
-        .y = seat.pointer.y - topleft.y,
-    };
-}
-
-pub fn visible(ws: *const Workspace) bool {
-    return ws.output != null;
-}
-
-pub fn origin(ws: *const Workspace) ?geom.Point {
-    const output = ws.output orelse return null;
-    return .{ .x = output.x, .y = output.y };
-}
-
 fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
     const ws = wm.gpa.create(Workspace) catch fatal("Out of memory.", .{});
     ws.* = .{
@@ -101,6 +78,33 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
 
     before.prev.?.insert(&ws.link);
     return ws;
+}
+
+// -- queries -------------------------------------------------------------
+
+pub fn isEmpty(ws: *const Workspace) bool {
+    return ws.windows.empty();
+}
+
+pub fn visible(ws: *const Workspace) bool {
+    return ws.output != null;
+}
+
+pub fn origin(ws: *const Workspace) ?geom.Point {
+    const output = ws.output orelse return null;
+    return .{ .x = output.x, .y = output.y };
+}
+
+/// TODO: multi-seat
+pub fn cursor(ws: *Workspace) ?geom.Point {
+    const seat = wm.seats.first() orelse return null;
+    if (!seat.pointer_known) return null;
+    const topleft = ws.origin() orelse return null;
+
+    return .{
+        .x = seat.pointer.x - topleft.x,
+        .y = seat.pointer.y - topleft.y,
+    };
 }
 
 pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*Window {
