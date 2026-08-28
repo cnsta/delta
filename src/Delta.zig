@@ -145,6 +145,9 @@ fn syncLayerShellDefault(delta: *Delta) void {
 }
 
 fn renderStart(delta: *Delta) void {
+    var it = list.safeIterator(Window, .link, &delta.windows);
+    while (it.next()) |window| window.center();
+
     delta.obj.renderFinish();
 }
 
@@ -193,6 +196,6 @@ pub fn tick(delta: *Delta) void {
     while (it.next()) |seat| seat.tick(now);
 }
 
-fn millis(delta: *const Delta) i64 {
+pub fn millis(delta: *const Delta) i64 {
     return std.Io.Clock.now(.awake, delta.io).toMilliseconds();
 }
