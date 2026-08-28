@@ -524,6 +524,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
             seat.pointer_known = true;
         },
 
-        else => {},
+        .wl_seat => {},
+        .shell_surface_interaction => {},
     }
 }
