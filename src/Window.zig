@@ -47,7 +47,9 @@ tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
-tiled_informed: bool = false,
+tiled_informed: ?bool = null,
+floating: bool = false,
+float_box: geom.Rect = geom.Rect.zero,
 
 overshoot: geom.Size = geom.Size.zero,
 
@@ -162,26 +164,66 @@ pub fn syncPosition(window: *Window) void {
 }
 
 pub fn applyPlacement(window: *Window, p: rules.Placement) void {
-    if (window.fullscreen != null) return;
+    if (window.floating) return;
 
-    if (!window.tiled_informed) {
-        window.obj.setTiled(.{ .top = true, .bottom = true, .left = true, .right = true });
-        window.tiled_informed = true;
+    window.apply(p);
+}
+
+pub fn applyFloating(window: *Window, area: geom.Rect) void {
+    if (window.float_box.width == 0) {
+        if (!window.sized()) {
+            window.propose(geom.Size.zero);
+            return;
+        }
+
+        window.float_box = .{
+            .x = area.x + @divTrunc(area.width - window.width, 2),
+            .y = area.y + @divTrunc(area.height - window.height, 2),
+            .width = window.width,
+            .height = window.height,
+        };
     }
 
-    if (p.content.width != window.slot.width or p.content.height != window.slot.height) {
-        log.debug("propose {d}x{d} at {d},{d}", .{
-            p.content.width, p.content.height, p.content.x, p.content.y,
-        });
-        window.overshoot = geom.Size.zero;
-        window.proposed = p.content.size();
-        window.obj.proposeDimensions(p.content.width, p.content.height);
+    window.apply(rules.placeFloating(window.float_box, area, window.limits));
+}
 
+fn apply(window: *Window, p: rules.Placement) void {
+    if (window.fullscreen != null) return;
+
+    window.syncTiled(!window.floating);
+
+    if (!p.content.size().eql(window.slot.size())) {
+        window.overshoot = geom.Size.zero;
+        window.propose(p.content.size());
         window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
     }
 
     window.slot = p.content;
     window.setPosition(p.content.x, p.content.y);
+}
+
+fn propose(window: *Window, size: geom.Size) void {
+    window.proposed = size;
+    window.obj.proposeDimensions(size.width, size.height);
+}
+
+fn syncTiled(window: *Window, on: bool) void {
+    if (window.tiled_informed) |applied| {
+        if (applied == on) return;
+    }
+
+    window.obj.setTiled(if (on) .{
+        .top = true,
+        .bottom = true,
+        .left = true,
+        .right = true,
+    } else .{
+        .top = false,
+        .bottom = false,
+        .left = false,
+        .right = false,
+    });
+    window.tiled_informed = on;
 }
 
 fn currentOutput(window: *Window) ?*Output {
@@ -209,6 +251,47 @@ fn syncFullscreen(window: *Window) void {
     }
 
     window.fullscreen_applied = window.fullscreen;
+}
+
+pub fn toggleFloating(window: *Window) void {
+    window.setFloating(!window.floating);
+}
+
+pub fn setFloating(window: *Window, on: bool) void {
+    if (window.floating == on) return;
+    window.floating = on;
+
+    const ws = window.workspace orelse return;
+
+    if (on) {
+        ws.layout.remove(window);
+
+        if (window.float_box.width == 0 and window.sized()) {
+            window.float_box = .{
+                .x = window.slot.x,
+                .y = window.slot.y,
+                .width = window.width,
+                .height = window.height,
+            };
+        }
+    } else {
+        window.float_box = window.slot;
+
+        const near = if (ws.cursor()) |c| ws.layout.windowAt(c) else null;
+        ws.layout.insert(window, near, ws.cursor());
+    }
+
+    ws.raiseFloating();
+}
+
+pub fn moveFloating(window: *Window, dx: i32, dy: i32) void {
+    window.float_box.x += dx;
+    window.float_box.y += dy;
+}
+
+pub fn resizeFloating(window: *Window, dx: i32, dy: i32) void {
+    window.float_box.width = @max(1, window.float_box.width + dx);
+    window.float_box.height = @max(1, window.float_box.height + dy);
 }
 
 fn syncResizing(window: *Window) void {
@@ -318,6 +401,7 @@ pub fn manage(window: *Window) void {
         window.obj.useSsd();
 
         window.setWorkspace(window.initialWorkspace());
+        if (window.parent != null) window.setFloating(true);
     }
 
     switch (window.pointer_request) {
