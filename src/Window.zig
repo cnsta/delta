@@ -411,15 +411,13 @@ fn syncNewFocus(window: *Window) void {
     if (!wm.config.input.focus_new_windows) {
         const previous = seat.focused orelse return;
         seat.dropFocus();
-        seat.focus(previous);
+        _ = seat.focus(previous);
         return;
     }
 
     if (!window.visible()) return;
 
-    seat.focus(window);
-
-    if (Seat.warpOnSpawn()) seat.warpTo(window);
+    if (seat.focus(window) and Seat.warpOnSpawn()) seat.warpTo(window);
 }
 
 pub fn visible(window: *const Window) bool {

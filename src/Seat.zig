@@ -190,8 +190,10 @@ pub fn manage(seat: *Seat) void {
 
     switch (seat.layer_focus) {
         .exclusive => seat.dropFocus(),
-        .non_exclusive => if (seat.interacted) |w| seat.focus(w) else seat.dropFocus(),
-        .none => seat.focus(seat.interacted),
+        .non_exclusive => if (seat.interacted) |w| {
+            _ = seat.focus(w);
+        } else seat.dropFocus(),
+        .none => _ = seat.focus(seat.interacted),
     }
     seat.interacted = null;
 
@@ -302,13 +304,13 @@ pub fn tick(seat: *Seat, now: i64) void {
 
 // -- focus -------------------------------------------------------------
 
-pub fn focus(seat: *Seat, window: ?*Window) void {
+pub fn focus(seat: *Seat, window: ?*Window) bool {
     const target = window orelse blk: {
         const ws = seat.workspace() orelse break :blk null;
         break :blk ws.windows.last();
     };
 
-    if (seat.focused == target) return;
+    if (seat.focused == target) return false;
 
     if (seat.focused) |old| old.focus_count -= 1;
 
@@ -331,6 +333,7 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
     }
 
     seat.focused = target;
+    return true;
 }
 
 pub fn dropFocus(seat: *Seat) void {
@@ -340,31 +343,33 @@ pub fn dropFocus(seat: *Seat) void {
 }
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {
-    if (window) |w| seat.warp_to = w;
+    const target = window orelse return;
+    if (seat.focused == target) return;
+
+    seat.warp_to = target;
 }
 
 pub fn focusNext(seat: *Seat) void {
     const ws = seat.workspace() orelse return;
-    seat.focus(ws.windows.first());
-    seat.warpTo(seat.focused);
+    if (seat.focus(ws.windows.first())) seat.warpTo(seat.focused);
 }
 
 pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     const window = seat.focused orelse {
-        seat.focus(null);
-        seat.warpTo(seat.focused);
+        if (seat.focus(null)) seat.warpTo(seat.focused);
         return;
     };
     const ws = window.workspace orelse return;
 
     if (ws.windowInDirection(window, dir)) |target| {
-        seat.focus(target);
-        seat.warpTo(seat.focused);
+        if (seat.focus(target)) seat.warpTo(target);
     }
 }
 
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
     const target = Workspace.get(id);
+
+    if (seat.workspace() == target) return;
 
     if (target.output == null) {
         const o = seat.output orelse return;
@@ -372,8 +377,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
     }
 
     seat.dropFocus();
-    seat.focus(target.windows.last());
-    seat.warpTo(seat.focused);
+    if (seat.focus(target.windows.last())) seat.warpTo(seat.focused);
 }
 
 pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
@@ -384,8 +388,7 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     window.setWorkspace(target);
 
     seat.dropFocus();
-    seat.focus(null);
-    seat.warpTo(seat.focused);
+    if (seat.focus(null)) seat.warpTo(seat.focused);
 }
 
 // -- window actions ----------------------------------------------------
@@ -436,18 +439,18 @@ pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
 
 pub fn startPointerMove(seat: *Seat) void {
     const window = seat.hovered orelse return;
-    seat.pointerMove(window);
+    _ = seat.focus(window);
 }
 
 pub fn startPointerResize(seat: *Seat) void {
     const window = seat.hovered orelse return;
-    seat.pointerResize(window);
+    _ = seat.focus(window);
 }
 
 pub fn pointerMove(seat: *Seat, window: *Window) void {
     if (seat.op != .none) return;
 
-    seat.focus(window);
+    _ = seat.focus(window);
     seat.obj.opStartPointer();
     seat.op = .{ .move = .{ .window = window } };
     seat.op_dx = 0;
@@ -457,7 +460,7 @@ pub fn pointerMove(seat: *Seat, window: *Window) void {
 pub fn pointerResize(seat: *Seat, window: *Window) void {
     if (seat.op != .none) return;
 
-    seat.focus(window);
+    _ = seat.focus(window);
     seat.obj.opStartPointer();
     seat.op = .{ .resize = .{ .window = window } };
     seat.op_dx = 0;
