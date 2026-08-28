@@ -10,6 +10,7 @@ pub const Gaps = struct {
 };
 
 pub const gaps: Gaps = .{};
+pub const border_width = 2;
 pub const resize_step = 32;
 
 comptime {
@@ -19,8 +20,8 @@ comptime {
 }
 
 pub const Limits = struct {
-    min: geom.Size = .{ .width = 0, .height = 0 },
-    max: geom.Size = .{ .width = 0, .height = 0 },
+    min: geom.Size = geom.Size.zero,
+    max: geom.Size = geom.Size.zero,
 };
 
 pub const Edges = struct {
@@ -60,11 +61,10 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
         .bottom = !sticks(box.y + box.height, area.y + area.height),
     };
 
-    const b = border_width;
-    const left = b + if (tiled.left) half else 0;
-    const top = b + if (tiled.top) half else 0;
-    const right = b + if (tiled.right) half else 0;
-    const bottom = b + if (tiled.bottom) half else 0;
+    const left = border_width + if (tiled.left) half else 0;
+    const top = border_width + if (tiled.top) half else 0;
+    const right = border_width + if (tiled.right) half else 0;
+    const bottom = border_width + if (tiled.bottom) half else 0;
 
     var content: geom.Rect = .{
         .x = box.x + left,
@@ -77,8 +77,6 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
 
     return .{ .content = content, .tiled = tiled };
 }
-
-pub const border_width = 2;
 
 fn clamp(content: *geom.Rect, limits: Limits, area: geom.Rect) void {
     var width = content.width;
@@ -104,7 +102,7 @@ fn sticks(a: i32, b: i32) bool {
     return @abs(a - b) <= 1;
 }
 
-test place {
+test "place gives equal gaps regardless of how the area was divided" {
     const area: geom.Rect = .{ .x = 10, .y = 10, .width = 200, .height = 100 };
 
     const left = place(.{ .x = 10, .y = 10, .width = 100, .height = 100 }, area, .{});
@@ -123,4 +121,23 @@ test place {
     try std.testing.expect(left.tiled.right and !left.tiled.left);
     try std.testing.expect(right.tiled.left and !right.tiled.right);
     try std.testing.expect(!left.tiled.top and !left.tiled.bottom);
+}
+
+test "sticks absorbs the pixel lost to integer subdivision" {
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 101 };
+
+    const lower = place(.{ .x = 0, .y = 50, .width = 100, .height = 50 }, area, .{});
+    try std.testing.expect(!lower.tiled.bottom);
+    try std.testing.expect(lower.tiled.top);
+}
+
+test "clamp centres a window that cannot shrink to its box" {
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 400, .height = 400 };
+    const box: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 400 };
+
+    const wide = place(box, area, .{ .min = .{ .width = 200, .height = 0 } });
+    try std.testing.expectEqual(@as(i32, 200), wide.content.width);
+
+    try std.testing.expect(wide.content.x >= area.x);
+    try std.testing.expect(wide.content.x + wide.content.width <= area.x + area.width);
 }
