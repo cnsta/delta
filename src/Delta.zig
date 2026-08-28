@@ -4,9 +4,8 @@ const wayland = @import("wayland");
 const river = wayland.client.river;
 const wl = wayland.client.wl;
 
-const list = @import("util/list.zig");
-
 const rules = @import("layouts/rules.zig");
+const list = @import("util/list.zig");
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
@@ -29,18 +28,23 @@ windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 workspaces: wl.list.Head(Workspace, .link),
 
+child_env: std.process.Environ.Map,
+
 default_output: ?*Output = null,
 
-child_env: std.process.Environ.Map,
+stop_deadline: ?i64 = null,
 
 running: bool = true,
 locked: bool = false,
+
 dirty: bool = false,
+
+pub const stop_timeout_ms = 1000;
 
 pub fn init(
     gpa: std.mem.Allocator,
     io: std.Io,
-    child_env: std.process.Environ.Map, // Add parameter here
+    child_env: std.process.Environ.Map,
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
@@ -48,7 +52,8 @@ pub fn init(
     instance = .{
         .gpa = gpa,
         .io = io,
-        .child_env = child_env, // Assign field here
+        .child_env = child_env,
+
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
         .layer_shell = layer_shell_obj,
@@ -81,29 +86,6 @@ pub fn listener(
         .output => |ev| Output.create(ev.id),
         .seat => |ev| Seat.create(ev.id),
     }
-}
-
-pub fn pollTimeout(delta: *Delta) i32 {
-    var soonest: ?i64 = null;
-
-    var it = delta.seats.iterator(.forward);
-    while (it.next()) |seat| {
-        const at = seat.repeatDeadline() orelse continue;
-        if (soonest == null or at < soonest.?) soonest = at;
-    }
-
-    const at = soonest orelse return -1;
-    const now = std.Io.Clock.now(.awake, delta.io).toMilliseconds();
-    const remaining = at - now;
-
-    return @intCast(@max(0, remaining));
-}
-
-pub fn tick(delta: *Delta) void {
-    const now = std.Io.Clock.now(.awake, delta.io).toMilliseconds();
-
-    var it = list.safeIterator(Seat, .link, &delta.seats);
-    while (it.next()) |seat| seat.tick(now);
 }
 
 fn manageStart(delta: *Delta) void {
@@ -164,4 +146,53 @@ fn syncLayerShellDefault(delta: *Delta) void {
 
 fn renderStart(delta: *Delta) void {
     delta.obj.renderFinish();
+}
+
+pub fn requestStop(delta: *Delta) void {
+    if (delta.stop_deadline != null) return;
+
+    std.log.info("shutting down", .{});
+    delta.obj.stop();
+    delta.stop_deadline = delta.millis() + stop_timeout_ms;
+}
+
+pub fn stopping(delta: *const Delta) bool {
+    return delta.stop_deadline != null;
+}
+
+pub fn pollTimeout(delta: *Delta) i32 {
+    var soonest: ?i64 = null;
+
+    var it = delta.seats.iterator(.forward);
+    while (it.next()) |seat| {
+        const deadline = seat.repeatDeadline() orelse continue;
+        if (soonest == null or deadline < soonest.?) soonest = deadline;
+    }
+
+    if (delta.stop_deadline) |deadline| {
+        if (soonest == null or deadline < soonest.?) soonest = deadline;
+    }
+
+    const at = soonest orelse return -1;
+
+    return @intCast(@max(0, at - delta.millis()));
+}
+
+pub fn tick(delta: *Delta) void {
+    const now = delta.millis();
+
+    if (delta.stop_deadline) |deadline| {
+        if (now >= deadline) {
+            std.log.warn("no finished event within {d}ms, exiting anyway", .{stop_timeout_ms});
+            delta.running = false;
+            return;
+        }
+    }
+
+    var it = list.safeIterator(Seat, .link, &delta.seats);
+    while (it.next()) |seat| seat.tick(now);
+}
+
+fn millis(delta: *const Delta) i64 {
+    return std.Io.Clock.now(.awake, delta.io).toMilliseconds();
 }
