@@ -39,6 +39,11 @@ pub fn create(
     seat.pointer_bindings.append(binding);
 
     binding.obj.setListener(*PointerBinding, listener, binding);
+
+    const mods_bits: u32 = @bitCast(mods);
+    log.debug("pointer binding: button 0x{x} mods 0x{x} -> {s}", .{
+        button, mods_bits, @tagName(action),
+    });
 }
 
 pub fn setEnabled(binding: *PointerBinding, on: bool) void {
@@ -46,7 +51,11 @@ pub fn setEnabled(binding: *PointerBinding, on: bool) void {
 
     if (on) binding.obj.enable() else binding.obj.disable();
     binding.enabled = on;
-    log.info("pointer binding {s}: {s}", .{ if (on) "enabled" else "disabled", @tagName(binding.action) });
+
+    log.debug("pointer binding {s}: {s}", .{
+        if (on) "enabled" else "disabled",
+        @tagName(binding.action),
+    });
 }
 
 pub fn destroy(binding: *PointerBinding) void {
@@ -57,10 +66,10 @@ pub fn destroy(binding: *PointerBinding) void {
 
 fn listener(_: *river.PointerBindingV1, event: river.PointerBindingV1.Event, binding: *PointerBinding) void {
     switch (event) {
-        .pressed => {
-            log.info("pointer binding pressed -> {s}", .{@tagName(binding.action)});
-            binding.seat.pending_action = binding.action;
+        .pressed => if (!binding.seat.pending.push(binding.action)) {
+            log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
         },
-        else => {},
+
+        .released => {},
     }
 }
