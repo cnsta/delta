@@ -80,6 +80,22 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
     return ws;
 }
 
+pub fn arrange(ws: *Workspace, area: geom.Rect) void {
+    ws.layout.arrange(area);
+
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.floating) window.applyFloating(area);
+    }
+}
+
+pub fn raiseFloating(ws: *Workspace) void {
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.floating and window.visible()) window.node.placeTop();
+    }
+}
+
 // -- queries -------------------------------------------------------------
 
 pub fn isEmpty(ws: *const Workspace) bool {

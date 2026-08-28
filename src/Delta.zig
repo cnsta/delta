@@ -118,7 +118,7 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |workspace| {
             const output = workspace.output orelse continue;
 
-            workspace.layout.arrange(rules.workArea(output));
+            workspace.arrange(rules.workArea(output));
         }
     }
     {
