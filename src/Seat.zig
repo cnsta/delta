@@ -62,6 +62,8 @@ pub const Op = union(enum) {
     },
 };
 
+// -- lifecycle ---------------------------------------------------------
+
 pub fn create(river_seat: *river.SeatV1) void {
     const seat = wm.gpa.create(Seat) catch fatal("Out of memory.", .{});
     seat.* = .{
@@ -125,6 +127,8 @@ pub fn forgetOutput(seat: *Seat, output_gone: *Output) void {
     if (seat.output == output_gone) seat.output = null;
 }
 
+// -- queries -----------------------------------------------------------
+
 pub fn workspace(seat: *Seat) ?*Workspace {
     if (seat.focused) |w| {
         if (w.workspace) |ws| return ws;
@@ -133,114 +137,34 @@ pub fn workspace(seat: *Seat) ?*Workspace {
     return o.workspace;
 }
 
-pub fn focus(seat: *Seat, window: ?*Window) void {
-    const target = window orelse blk: {
-        const ws = seat.workspace() orelse break :blk null;
-        break :blk ws.windows.last();
-    };
-
-    if (seat.focused == target) return;
-
-    if (seat.focused) |old| old.focus_count -= 1;
-
-    if (target) |w| {
-        seat.obj.focusWindow(w.obj);
-        w.node.placeTop();
-
-        w.link.remove();
-        wm.windows.append(w);
-
-        if (w.workspace) |ws| {
-            w.workspace_link.remove();
-            ws.windows.append(w);
+fn updateOutput(seat: *Seat) void {
+    if (seat.pointer_known) {
+        if (Output.at(seat.pointer)) |o| {
+            seat.output = o;
+            return;
         }
-
-        w.focus_count += 1;
-    } else {
-        seat.obj.clearFocus();
     }
 
-    seat.focused = target;
-}
-
-pub fn pointerMove(seat: *Seat, window: *Window) void {
-    if (seat.op != .none) return;
-
-    seat.focus(window);
-    seat.obj.opStartPointer();
-    seat.op = .{ .move = .{ .window = window } };
-    seat.op_dx = 0;
-    seat.op_dy = 0;
-}
-
-pub fn pointerResize(seat: *Seat, window: *Window) void {
-    if (seat.op != .none) return;
-
-    seat.focus(window);
-    seat.obj.opStartPointer();
-    seat.op = .{ .resize = .{ .window = window } };
-    seat.op_dx = 0;
-    seat.op_dy = 0;
-}
-
-pub fn closeFocused(seat: *Seat) void {
-    const window = seat.focused orelse return;
-    window.obj.close();
-}
-
-pub fn toggleFullscreen(seat: *Seat) void {
-    const window = seat.focused orelse return;
-    window.toggleFullscreen();
-}
-
-pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
-    const window = seat.focused orelse return;
-
-    if (window.fullscreen != null) return;
-    const step = rules.resize_step;
-
-    switch (how) {
-        .grow_width => Eddy.resize(window, step, 0),
-        .shrink_width => Eddy.resize(window, -step, 0),
-        .grow_height => Eddy.resize(window, 0, step),
-        .shrink_height => Eddy.resize(window, 0, -step),
-    }
-}
-
-pub fn startPointerMove(seat: *Seat) void {
-    const window = seat.hovered orelse return;
-    seat.pointerMove(window);
-}
-
-pub fn startPointerResize(seat: *Seat) void {
-    const window = seat.hovered orelse return;
-    seat.pointerResize(window);
-}
-
-pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
-    const target = Workspace.get(id);
-
-    if (target.output == null) {
-        const o = seat.output orelse return;
-        o.setWorkspace(target);
+    if (seat.focused) |w| {
+        if (w.workspace) |ws| {
+            if (ws.output) |o| {
+                seat.output = o;
+                return;
+            }
+        }
     }
 
-    seat.dropFocus();
-    seat.focus(target.windows.last());
-    seat.warpTo(seat.focused);
+    if (seat.output != null) return;
+
+    seat.output = wm.outputs.first();
 }
 
-pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
-    const window = seat.focused orelse return;
-    const target = Workspace.get(id);
-    if (window.workspace == target) return;
-
-    window.setWorkspace(target);
-
-    seat.dropFocus();
-    seat.focus(null);
-    seat.warpTo(seat.focused);
+pub fn repeatDeadline(seat: *Seat) ?i64 {
+    _ = seat;
+    return null;
 }
+
+// -- the manage sequence -----------------------------------------------
 
 pub fn manage(seat: *Seat) void {
     seat.syncBindings(!wm.locked);
@@ -288,6 +212,14 @@ pub fn manage(seat: *Seat) void {
     seat.op_release = false;
 }
 
+fn syncBindings(seat: *Seat, on: bool) void {
+    var keys = seat.xkb_bindings.iterator(.forward);
+    while (keys.next()) |binding| binding.setEnabled(on);
+
+    var buttons = seat.pointer_bindings.iterator(.forward);
+    while (buttons.next()) |binding| binding.setEnabled(on);
+}
+
 pub fn applyWarp(seat: *Seat) void {
     const window = seat.warp_to orelse return;
     seat.warp_to = null;
@@ -311,6 +243,74 @@ pub fn applyWarp(seat: *Seat) void {
     seat.output = ws.output;
 }
 
+fn endOp(seat: *Seat) void {
+    if (seat.op == .none) return;
+
+    seat.obj.opEnd();
+    seat.op = .none;
+}
+
+fn dropMove(seat: *Seat, window: *Window) void {
+    if (!seat.pointer_known) return;
+    const ws = window.workspace orelse return;
+    const origin = ws.origin() orelse return;
+
+    const point: geom.Point = .{
+        .x = seat.pointer.x - origin.x,
+        .y = seat.pointer.y - origin.y,
+    };
+    const other = ws.layout.windowAt(point) orelse return;
+    ws.layout.swap(window, other);
+}
+
+pub fn tick(seat: *Seat, now: i64) void {
+    _ = seat;
+    _ = now;
+    // TODO: Implement timer-based events like keyboard repeats
+}
+
+// -- focus -------------------------------------------------------------
+
+pub fn focus(seat: *Seat, window: ?*Window) void {
+    const target = window orelse blk: {
+        const ws = seat.workspace() orelse break :blk null;
+        break :blk ws.windows.last();
+    };
+
+    if (seat.focused == target) return;
+
+    if (seat.focused) |old| old.focus_count -= 1;
+
+    if (target) |w| {
+        seat.obj.focusWindow(w.obj);
+        w.node.placeTop();
+
+        w.link.remove();
+        wm.windows.append(w);
+
+        if (w.workspace) |ws| {
+            w.workspace_link.remove();
+            ws.windows.append(w);
+        }
+
+        w.focus_count += 1;
+    } else {
+        seat.obj.clearFocus();
+    }
+
+    seat.focused = target;
+}
+
+fn dropFocus(seat: *Seat) void {
+    const old = seat.focused orelse return;
+    old.focus_count -= 1;
+    seat.focused = null;
+}
+
+fn warpTo(seat: *Seat, window: ?*Window) void {
+    if (window) |w| seat.warp_to = w;
+}
+
 pub fn focusNext(seat: *Seat) void {
     const ws = seat.workspace() orelse return;
     seat.focus(ws.windows.first());
@@ -331,33 +331,102 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     }
 }
 
-fn syncBindings(seat: *Seat, on: bool) void {
-    var keys = seat.xkb_bindings.iterator(.forward);
-    while (keys.next()) |binding| binding.setEnabled(on);
+pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
+    const target = Workspace.get(id);
 
-    var buttons = seat.pointer_bindings.iterator(.forward);
-    while (buttons.next()) |binding| binding.setEnabled(on);
+    if (target.output == null) {
+        const o = seat.output orelse return;
+        o.setWorkspace(target);
+    }
+
+    seat.dropFocus();
+    seat.focus(target.windows.last());
+    seat.warpTo(seat.focused);
 }
 
-fn endOp(seat: *Seat) void {
-    if (seat.op == .none) return;
+pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
+    const window = seat.focused orelse return;
+    const target = Workspace.get(id);
+    if (window.workspace == target) return;
 
-    seat.obj.opEnd();
-    seat.op = .none;
+    window.setWorkspace(target);
+
+    seat.dropFocus();
+    seat.focus(null);
+    seat.warpTo(seat.focused);
 }
 
-fn dropMove(seat: *Seat, window: *Window) void {
-    if (!seat.pointer_known) return;
-    const ws = window.workspace orelse return;
-    const origin = ws.origin() orelse return;
+// -- window actions ----------------------------------------------------
 
-    const point: geom.Point = .{
-        .x = seat.pointer.x - origin.x,
-        .y = seat.pointer.y - origin.y,
-    };
-    const other = ws.layout.windowAt(point) orelse return;
-    ws.layout.swap(window, other);
+pub fn closeFocused(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    window.obj.close();
 }
+
+pub fn toggleFullscreen(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    window.toggleFullscreen();
+}
+
+pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
+    const window = seat.focused orelse return;
+
+    if (window.fullscreen != null) return;
+    const step = rules.resize_step;
+
+    switch (how) {
+        .grow_width => Eddy.resize(window, step, 0),
+        .shrink_width => Eddy.resize(window, -step, 0),
+        .grow_height => Eddy.resize(window, 0, step),
+        .shrink_height => Eddy.resize(window, 0, -step),
+    }
+}
+
+// -- pointer operations ------------------------------------------------
+
+pub fn startPointerMove(seat: *Seat) void {
+    const window = seat.hovered orelse return;
+    seat.pointerMove(window);
+}
+
+pub fn startPointerResize(seat: *Seat) void {
+    const window = seat.hovered orelse return;
+    seat.pointerResize(window);
+}
+
+pub fn pointerMove(seat: *Seat, window: *Window) void {
+    if (seat.op != .none) return;
+
+    seat.focus(window);
+    seat.obj.opStartPointer();
+    seat.op = .{ .move = .{ .window = window } };
+    seat.op_dx = 0;
+    seat.op_dy = 0;
+}
+
+pub fn pointerResize(seat: *Seat, window: *Window) void {
+    if (seat.op != .none) return;
+
+    seat.focus(window);
+    seat.obj.opStartPointer();
+    seat.op = .{ .resize = .{ .window = window } };
+    seat.op_dx = 0;
+    seat.op_dy = 0;
+}
+
+// -- key repeat --------------------------------------------------------
+
+pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
+    _ = seat;
+    _ = binding;
+}
+
+pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
+    _ = seat;
+    _ = binding;
+}
+
+// -- setup and listeners -----------------------------------------------
 
 /// Hardcoded for now.
 fn setupDefaultBindings(seat: *Seat) void {
@@ -422,27 +491,6 @@ fn setupDefaultBindings(seat: *Seat) void {
     PointerBinding.create(seat, super, event_codes.BTN_RIGHT, .pointer_resize);
 }
 
-pub fn tick(seat: *Seat, now: i64) void {
-    _ = seat;
-    _ = now;
-    // TODO: Implement timer-based events like keyboard repeats
-}
-
-pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
-    _ = seat;
-    _ = binding;
-}
-
-pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
-    _ = seat;
-    _ = binding;
-}
-
-pub fn repeatDeadline(seat: *Seat) ?i64 {
-    _ = seat;
-    return null;
-}
-
 fn shellListener(
     _: *river.LayerShellSeatV1,
     event: river.LayerShellSeatV1.Event,
@@ -478,36 +526,4 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
 
         else => {},
     }
-}
-
-fn updateOutput(seat: *Seat) void {
-    if (seat.pointer_known) {
-        if (Output.at(seat.pointer)) |o| {
-            seat.output = o;
-            return;
-        }
-    }
-
-    if (seat.focused) |w| {
-        if (w.workspace) |ws| {
-            if (ws.output) |o| {
-                seat.output = o;
-                return;
-            }
-        }
-    }
-
-    if (seat.output != null) return;
-
-    seat.output = wm.outputs.first();
-}
-
-fn warpTo(seat: *Seat, window: ?*Window) void {
-    if (window) |w| seat.warp_to = w;
-}
-
-fn dropFocus(seat: *Seat) void {
-    const old = seat.focused orelse return;
-    old.focus_count -= 1;
-    seat.focused = null;
 }
