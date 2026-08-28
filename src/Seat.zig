@@ -32,7 +32,11 @@ warp_to: ?*Window = null,
 
 xkb_bindings: wl.list.Head(XkbBinding, .link),
 pointer_bindings: wl.list.Head(PointerBinding, .link),
-pending_action: Action = .none,
+pending: Action.Queue = .{},
+
+repeat_binding: ?*XkbBinding = null,
+
+repeat_at: i64 = 0,
 
 op: Op = .none,
 op_dx: i32 = 0,
@@ -49,6 +53,9 @@ pointer_known: bool = false,
 output: ?*Output = null,
 
 pub const warp_on_focus = true;
+
+pub const repeat_delay_ms = 400;
+pub const repeat_rate_ms = 40;
 
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
@@ -95,6 +102,9 @@ pub fn fromObj(obj: *river.SeatV1) *Seat {
 
 pub fn maybeDestroy(seat: *Seat) void {
     if (!seat.removed) return;
+
+    seat.repeat_binding = null;
+    seat.pending.clear();
 
     while (seat.xkb_bindings.first()) |binding| binding.destroy();
     while (seat.pointer_bindings.first()) |binding| binding.destroy();
@@ -159,9 +169,9 @@ fn updateOutput(seat: *Seat) void {
     seat.output = wm.outputs.first();
 }
 
-pub fn repeatDeadline(seat: *Seat) ?i64 {
-    _ = seat;
-    return null;
+pub fn repeatDeadline(seat: *const Seat) ?i64 {
+    if (seat.repeat_binding == null) return null;
+    return seat.repeat_at;
 }
 
 // -- the manage sequence -----------------------------------------------
@@ -174,7 +184,8 @@ pub fn manage(seat: *Seat) void {
     if (wm.locked) {
         seat.endOp();
         seat.interacted = null;
-        seat.pending_action = .none;
+        seat.pending.clear();
+        seat.repeat_binding = null;
         seat.op_release = false;
         return;
     }
@@ -186,8 +197,7 @@ pub fn manage(seat: *Seat) void {
     }
     seat.interacted = null;
 
-    seat.pending_action.execute(seat);
-    seat.pending_action = .none;
+    while (seat.pending.pop()) |action| action.execute(seat);
 
     if (seat.op_release) {
         switch (seat.op) {
@@ -264,9 +274,18 @@ fn dropMove(seat: *Seat, window: *Window) void {
 }
 
 pub fn tick(seat: *Seat, now: i64) void {
-    _ = seat;
-    _ = now;
-    // TODO: Implement timer-based events like keyboard repeats
+    const binding = seat.repeat_binding orelse return;
+    if (now < seat.repeat_at) return;
+
+    if (wm.locked) {
+        seat.repeat_binding = null;
+        return;
+    }
+
+    _ = seat.pending.push(binding.action);
+
+    seat.repeat_at = now + repeat_rate_ms;
+    wm.dirty = true;
 }
 
 // -- focus -------------------------------------------------------------
@@ -417,13 +436,14 @@ pub fn pointerResize(seat: *Seat, window: *Window) void {
 // -- key repeat --------------------------------------------------------
 
 pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
-    _ = seat;
-    _ = binding;
+    if (!binding.action.repeats()) return;
+
+    seat.repeat_binding = binding;
+    seat.repeat_at = wm.millis() + repeat_delay_ms;
 }
 
 pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
-    _ = seat;
-    _ = binding;
+    if (seat.repeat_binding == binding) seat.repeat_binding = null;
 }
 
 // -- setup and listeners -----------------------------------------------
