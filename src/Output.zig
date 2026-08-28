@@ -16,18 +16,21 @@ const Workspace = @import("Workspace.zig");
 const Output = @This();
 
 obj: *river.OutputV1,
-removed: bool = false,
 link: wl.list.Link,
+removed: bool = false,
 
 x: i32 = 0,
 y: i32 = 0,
 width: i32 = 0,
 height: i32 = 0,
 
-workspace: *Workspace,
-shell: ?*river.LayerShellOutputV1 = null,
 usable: ?geom.Rect = null,
+
+workspace: *Workspace,
+
 previous: ?*Workspace = null,
+
+shell: ?*river.LayerShellOutputV1 = null,
 
 pub fn create(river_output: *river.OutputV1) void {
     const output = wm.gpa.create(Output) catch fatal("Out of memory.", .{});
@@ -70,7 +73,7 @@ pub fn maybeDestroy(output: *Output) void {
         window.obj.informNotFullscreen();
         window.fullscreen = null;
         window.fullscreen_applied = null;
-        window.slot = .{ .x = 0, .y = 0, .width = 0, .height = 0 };
+        window.slot = geom.Rect.zero;
         window.placed = null;
     }
 
@@ -95,13 +98,50 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
     target.output = output;
 }
 
-pub fn usableArea(output: *const Output) geom.Rect {
-    return output.usable orelse .{
+// -- queries -------------------------------------------------------------
+
+pub fn rect(output: *const Output) geom.Rect {
+    return .{
         .x = output.x,
         .y = output.y,
         .width = output.width,
         .height = output.height,
     };
+}
+
+pub fn usableArea(output: *const Output) geom.Rect {
+    return output.usable orelse output.rect();
+}
+
+pub fn contains(output: *const Output, point: geom.Point) bool {
+    return output.rect().contains(point);
+}
+
+pub fn at(point: geom.Point) ?*Output {
+    var it = wm.outputs.iterator(.forward);
+    while (it.next()) |output| {
+        if (output.contains(point)) return output;
+    }
+    return null;
+}
+
+// -- listeners -----------------------------------------------------------
+
+fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) void {
+    switch (event) {
+        .removed => output.removed = true,
+        .position => |args| {
+            output.x = args.x;
+            output.y = args.y;
+        },
+        .dimensions => |args| {
+            output.width = args.width;
+            output.height = args.height;
+        },
+
+        .wl_output => {},
+        .capture_sessions => {},
+    }
 }
 
 fn shellListener(
@@ -116,33 +156,5 @@ fn shellListener(
             .width = args.width,
             .height = args.height,
         },
-    }
-}
-
-pub fn contains(output: *const Output, point: geom.Point) bool {
-    return point.x >= output.x and point.x < output.x + output.width and
-        point.y >= output.y and point.y < output.y + output.height;
-}
-
-pub fn at(point: geom.Point) ?*Output {
-    var it = wm.outputs.iterator(.forward);
-    while (it.next()) |output| {
-        if (output.contains(point)) return output;
-    }
-    return null;
-}
-
-fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) void {
-    switch (event) {
-        .removed => output.removed = true,
-        .position => |args| {
-            output.x = args.x;
-            output.y = args.y;
-        },
-        .dimensions => |args| {
-            output.width = args.width;
-            output.height = args.height;
-        },
-        else => {},
     }
 }
