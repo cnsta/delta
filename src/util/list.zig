@@ -4,16 +4,17 @@ pub fn SafeIterator(comptime T: type, comptime field: @TypeOf(.enum_literal)) ty
     return struct {
         const Self = @This();
 
-        head: *wl.list.Link,
+        head: *const wl.list.Link,
         next_link: *wl.list.Link,
 
         pub fn next(it: *Self) ?*T {
             const current = it.next_link;
             if (current == it.head) return null;
+
+            // read before yielding, `current` may be freed by the caller.
             it.next_link = current.next orelse return null;
 
-            const elem: *T = @fieldParentPtr(@tagName(field), current);
-            return elem;
+            return @fieldParentPtr(@tagName(field), current);
         }
     };
 }
