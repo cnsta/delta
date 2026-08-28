@@ -19,6 +19,7 @@ pub const Action = union(enum) {
     pointer_resize,
     resize: Resize,
     toggle_fullscreen,
+    toggle_floating,
     exit,
 
     pub const Resize = enum {
@@ -41,6 +42,7 @@ pub const Action = union(enum) {
             .pointer_resize => seat.startPointerResize(),
             .resize => |how| seat.resizeStep(how),
             .toggle_fullscreen => seat.toggleFullscreen(),
+            .toggle_floating => seat.toggleFloating(),
             .exit => wm.obj.exitSession(),
         }
     }
@@ -52,11 +54,12 @@ pub const Action = union(enum) {
             .none,
             .spawn,
             .close,
-            .toggle_fullscreen,
             .focus_workspace,
             .send_to_workspace,
             .pointer_move,
             .pointer_resize,
+            .toggle_fullscreen,
+            .toggle_floating,
             .exit,
             => false,
         };
