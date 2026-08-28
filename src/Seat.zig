@@ -61,7 +61,11 @@ pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
 pub const Op = union(enum) {
     none,
-    move: struct { window: *Window },
+    move: struct {
+        window: *Window,
+        applied_dx: i32 = 0,
+        applied_dy: i32 = 0,
+    },
     resize: struct {
         window: *Window,
         applied_dx: i32 = 0,
@@ -202,18 +206,32 @@ pub fn manage(seat: *Seat) void {
     if (seat.op_release) {
         switch (seat.op) {
             .none => {},
-            .move => |args| seat.dropMove(args.window),
+            .move => |args| if (!args.window.floating) seat.dropMove(args.window),
             .resize => {},
         }
         seat.endOp();
     } else switch (seat.op) {
-        .none, .move => {},
-        .resize => |*args| {
-            Eddy.resize(
-                args.window,
+        .none => {},
+        .move => |*args| if (args.window.floating) {
+            args.window.moveFloating(
                 seat.op_dx - args.applied_dx,
                 seat.op_dy - args.applied_dy,
             );
+            args.applied_dx = seat.op_dx;
+            args.applied_dy = seat.op_dy;
+        },
+
+        .resize => |*args| {
+            const dx = seat.op_dx - args.applied_dx;
+            const dy = seat.op_dy - args.applied_dy;
+
+            // A floating window resizes itself; a tiled one moves a divider.
+            if (args.window.floating) {
+                args.window.resizeFloating(dx, dy);
+            } else {
+                Eddy.resize(args.window, dx, dy);
+            }
+
             args.applied_dx = seat.op_dx;
             args.applied_dy = seat.op_dy;
         },
@@ -303,6 +321,7 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
     if (target) |w| {
         seat.obj.focusWindow(w.obj);
         w.node.placeTop();
+        if (w.workspace) |ws| ws.raiseFloating();
 
         w.link.remove();
         wm.windows.append(w);
@@ -387,11 +406,29 @@ pub fn toggleFullscreen(seat: *Seat) void {
     window.toggleFullscreen();
 }
 
+pub fn toggleFloating(seat: *Seat) void {
+    const window = seat.focused orelse return;
+
+    if (window.fullscreen != null) return;
+
+    window.toggleFloating();
+}
+
 pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
     const window = seat.focused orelse return;
 
     if (window.fullscreen != null) return;
     const step = rules.resize_step;
+
+    if (window.floating) {
+        switch (how) {
+            .grow_width => window.resizeFloating(step, 0),
+            .shrink_width => window.resizeFloating(-step, 0),
+            .grow_height => window.resizeFloating(0, step),
+            .shrink_height => window.resizeFloating(0, -step),
+        }
+        return;
+    }
 
     switch (how) {
         .grow_width => Eddy.resize(window, step, 0),
