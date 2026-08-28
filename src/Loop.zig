@@ -33,18 +33,14 @@ pub fn init(display: *wl.Display) !Loop {
     };
     posix.sigaction(posix.SIG.PIPE, &ignore, null);
 
-    var act: posix.Sigaction = .{
+    const no_zombies: posix.Sigaction = .{
         .handler = .{ .handler = posix.SIG.DFL },
         .mask = posix.sigemptyset(),
         .flags = posix.SA.NOCLDWAIT,
     };
-    posix.sigaction(posix.SIG.CHLD, &act, null);
+    posix.sigaction(posix.SIG.CHLD, &no_zombies, null);
 
-    const flags = @as(u32, @bitCast(posix.O{
-        .CLOEXEC = true,
-        .NONBLOCK = true,
-    }));
-
+    const flags: u32 = @bitCast(posix.O{ .CLOEXEC = true, .NONBLOCK = true });
     const signals = try posix.signalfd(-1, &mask, flags);
 
     return .{
@@ -67,10 +63,7 @@ pub fn run(loop: *Loop) !void {
             if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
         }
 
-        if (loop.display.flush() != .SUCCESS) {
-            loop.display.cancelRead();
-            return error.FlushFailed;
-        }
+        if (loop.display.flush() != .SUCCESS) return loop.lost(.read_prepared);
 
         _ = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
@@ -79,15 +72,11 @@ pub fn run(loop: *Loop) !void {
 
         const revents = loop.fds[wayland_fd].revents;
 
-        if (revents & (posix.POLL.HUP | posix.POLL.ERR) != 0) {
-            loop.display.cancelRead();
-            log.err("lost the Wayland connection", .{});
-            wm.running = false;
-            return;
-        }
+        if (revents & (posix.POLL.HUP | posix.POLL.ERR) != 0) return loop.lost(.read_prepared);
 
         if (revents & posix.POLL.IN != 0) {
-            if (loop.display.readEvents() != .SUCCESS) return error.ReadFailed;
+            // readEvents releases the reader lock whether it succeeds or fails.
+            if (loop.display.readEvents() != .SUCCESS) return loop.lost(.read_released);
         } else {
             loop.display.cancelRead();
         }
@@ -105,6 +94,20 @@ pub fn run(loop: *Loop) !void {
     }
 }
 
+const ReadLock = enum { read_prepared, read_released };
+
+fn lost(loop: *Loop, held: ReadLock) error{ConnectionLost}!void {
+    if (held == .read_prepared) loop.display.cancelRead();
+
+    if (wm.stopping()) {
+        wm.running = false;
+        return;
+    }
+
+    log.err("lost the Wayland connection", .{});
+    return error.ConnectionLost;
+}
+
 fn readSignals(loop: *Loop) void {
     var info: std.os.linux.signalfd_siginfo = undefined;
     const bytes = std.mem.asBytes(&info);
@@ -120,13 +123,8 @@ fn readSignals(loop: *Loop) void {
         if (n != bytes.len) return;
 
         const sig: posix.SIG = @enumFromInt(info.signo);
-
         switch (sig) {
-            .INT, .TERM => {
-                log.info("caught signal {d}, shutting down", .{info.signo});
-
-                wm.obj.stop();
-            },
+            .INT, .TERM => wm.requestStop(),
             .HUP => log.info("caught SIGHUP (config reload is not implemented yet)", .{}),
             else => {},
         }
