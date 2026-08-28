@@ -179,6 +179,11 @@ pub fn applyFloating(window: *Window, area: geom.Rect) void {
         window.float_box = window.initialFloatBox(area);
     }
 
+    if (window.sized() and window.proposed.eql(window.float_box.size())) {
+        window.float_box.width = window.width;
+        window.float_box.height = window.height;
+    }
+
     window.apply(rules.placeFloating(window.float_box, area, window.limits));
 }
 
@@ -204,6 +209,14 @@ fn apply(window: *Window, p: rules.Placement) void {
     window.syncTiled(!window.floating);
 
     if (!p.content.size().eql(window.slot.size())) {
+        log.info("{s} propose {d}x{d} at {d},{d}", .{
+            if (window.floating) "float" else "tile",
+            p.content.width,
+            p.content.height,
+            p.content.x,
+            p.content.y,
+        });
+
         window.overshoot = geom.Size.zero;
         window.propose(p.content.size());
         window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
@@ -317,7 +330,7 @@ fn syncResizing(window: *Window) void {
     if (want) window.obj.informResizeStart() else window.obj.informResizeEnd();
     window.resizing = want;
 
-    log.debug("resize {s}", .{if (want) "start" else "end"});
+    log.info("resize {s}", .{if (want) "start" else "end"});
 }
 
 pub fn syncVisibility(window: *Window) void {
@@ -339,9 +352,7 @@ fn syncSize(window: *Window) void {
     const short_h = @max(0, window.slot.height - window.height);
     if (short_w == 0 and short_h == 0) return;
     if (short_w > max_overshoot or short_h > max_overshoot) {
-        log.debug("giving up: slot {d}x{d} actual {d}x{d}", .{
-            window.slot.width, window.slot.height, window.width, window.height,
-        });
+        if (!window.proposed.eql(window.slot.size())) window.propose(window.slot.size());
         return;
     }
 
@@ -364,6 +375,7 @@ fn syncSize(window: *Window) void {
 }
 
 pub fn center(window: *Window) void {
+    if (window.floating) return;
     if (window.slot.width == 0 or !window.sized()) return;
 
     window.setPosition(
