@@ -9,6 +9,7 @@ const wm = &@import("Delta.zig").instance;
 const color = @import("util/color.zig");
 const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
+const string = @import("util/string.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
 const rules = @import("layouts/rules.zig");
@@ -47,9 +48,15 @@ tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
-tiled_informed: ?bool = null,
+tiled_informed: bool = false,
 floating: bool = false,
 float_box: geom.Rect = geom.Rect.zero,
+
+identifier_buf: [32]u8 = undefined,
+identifier_len: u8 = 0,
+app_id: ?[]const u8 = null,
+title: ?[]const u8 = null,
+pid: ?i32 = null,
 
 overshoot: geom.Size = geom.Size.zero,
 
@@ -71,6 +78,10 @@ pub const PointerRequest = union(enum) {
     move: struct { seat: *Seat },
     resize: struct { seat: *Seat },
 };
+
+pub fn identifier(window: *const Window) []const u8 {
+    return window.identifier_buf[0..window.identifier_len];
+}
 
 pub const border_focused = color.rgb(0x4c, 0x7a, 0x5d);
 pub const border_inactive = color.rgb(0x50, 0x49, 0x45);
@@ -116,6 +127,9 @@ pub fn maybeDestroy(window: *Window) void {
         window.workspace_link.remove();
         window.workspace = null;
     }
+
+    string.free(wm.gpa, &window.app_id);
+    string.free(wm.gpa, &window.title);
 
     window.obj.destroy();
     window.link.remove();
@@ -179,11 +193,6 @@ pub fn applyFloating(window: *Window, area: geom.Rect) void {
         window.float_box = window.initialFloatBox(area);
     }
 
-    if (window.sized() and window.proposed.eql(window.float_box.size())) {
-        window.float_box.width = window.width;
-        window.float_box.height = window.height;
-    }
-
     window.apply(rules.placeFloating(window.float_box, area, window.limits));
 }
 
@@ -206,7 +215,7 @@ fn initialFloatBox(window: *const Window, area: geom.Rect) geom.Rect {
 fn apply(window: *Window, p: rules.Placement) void {
     if (window.fullscreen != null) return;
 
-    window.syncTiled(!window.floating);
+    window.syncTiled();
 
     if (!p.content.size().eql(window.slot.size())) {
         log.info("{s} propose {d}x{d} at {d},{d}", .{
@@ -231,23 +240,11 @@ fn propose(window: *Window, size: geom.Size) void {
     window.obj.proposeDimensions(size.width, size.height);
 }
 
-fn syncTiled(window: *Window, on: bool) void {
-    if (window.tiled_informed) |applied| {
-        if (applied == on) return;
-    }
+fn syncTiled(window: *Window) void {
+    if (window.tiled_informed) return;
 
-    window.obj.setTiled(if (on) .{
-        .top = true,
-        .bottom = true,
-        .left = true,
-        .right = true,
-    } else .{
-        .top = false,
-        .bottom = false,
-        .left = false,
-        .right = false,
-    });
-    window.tiled_informed = on;
+    window.obj.setTiled(.{ .top = true, .bottom = true, .left = true, .right = true });
+    window.tiled_informed = true;
 }
 
 fn currentOutput(window: *Window) ?*Output {
@@ -440,6 +437,9 @@ pub fn manage(window: *Window) void {
         if (window.parent != null) window.setFloating(true);
 
         window.syncNewFocus();
+        log.info("mapped {s} app_id={?s} title={?s} pid={?d}", .{
+            window.identifier(), window.app_id, window.title, window.pid,
+        });
     }
 
     switch (window.pointer_request) {
@@ -470,29 +470,59 @@ pub fn manage(window: *Window) void {
 fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) void {
     switch (event) {
         .closed => window.closed = true,
+
         .dimensions_hint => |args| window.limits = .{
             .min = .{ .width = args.min_width, .height = args.min_height },
             .max = .{ .width = args.max_width, .height = args.max_height },
         },
+
         .dimensions => |args| {
             window.width = args.width;
             window.height = args.height;
         },
+
         .fullscreen_requested => |args| window.fullscreen_request = .{
             .enter = if (args.output) |o| Output.fromObj(o) else null,
         },
+
         .exit_fullscreen_requested => window.fullscreen_request = .exit,
+
         .parent => |args| window.parent = if (args.parent) |p| fromObj(p) else null,
+
         .pointer_move_requested => |args| if (args.seat) |seat| {
             window.pointer_request = .{ .move = .{
                 .seat = Seat.fromObj(seat),
             } };
         },
+
         .pointer_resize_requested => |args| if (args.seat) |seat| {
             window.pointer_request = .{ .resize = .{
                 .seat = Seat.fromObj(seat),
             } };
         },
+
+        .identifier => |args| window.setIdentifier(args.identifier),
+
+        .app_id => |args| _ = string.replace(wm.gpa, &window.app_id, args.app_id) catch
+            fatal("Out of memory.", .{}),
+
+        .title => |args| _ = string.replace(wm.gpa, &window.title, args.title) catch
+            fatal("Out of memory.", .{}),
+
+        .unreliable_pid => |args| window.pid = args.unreliable_pid,
+
         else => {},
+    }
+}
+
+fn setIdentifier(window: *Window, id: [*:0]const u8) void {
+    const value = std.mem.sliceTo(id, 0);
+    const len = @min(value.len, window.identifier_buf.len);
+
+    @memcpy(window.identifier_buf[0..len], value[0..len]);
+    window.identifier_len = @intCast(len);
+
+    if (len != value.len) {
+        log.warn("identifier truncated from {d} bytes: {s}", .{ value.len, window.identifier() });
     }
 }
