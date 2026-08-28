@@ -1,10 +1,10 @@
 #!/usr/bin/env nix-shell
 #!nix-shell -i bash -p bash git nix-prefetch-git zon2nix jq gnused ed alejandra
 #
-# ./update.sh                   update everything, then build everything
-# ./update.sh --update          update only
-# ./update.sh --build           build only
-# ./update.sh --build delta     restrict to named packages
+# ./update.sh                 update upstream dependencies, then build
+# ./update.sh --update        update upstream dependencies only
+# ./update.sh --build         build local packages only
+# ./update.sh --build delta   build local delta
 
 set -euo pipefail
 
@@ -12,6 +12,25 @@ cd "$(dirname "$(readlink -f "$0")")"
 
 usage() {
   sed -n '3,8p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+sync_local_zon() {
+  local name=$1
+  local zonfile="pkgs/$name/build.zig.zon.nix"
+  local zon="../build.zig.zon"
+  local digest
+
+  digest=$(sha256sum "$zon" | cut -d' ' -f1)
+
+  if [ -s "$zonfile" ] && [ "$(current_zon_digest "$zonfile")" = "$digest" ]; then
+    return 0
+  fi
+
+  echo "    regenerating $zonfile"
+  zon2nix "$zon" >"$zonfile"
+  write_zon_digest_comment "$zonfile" "$digest"
+  sanitize_zon "$zonfile"
+  alejandra --quiet "$zonfile" >/dev/null
 }
 
 do_update=false
@@ -41,7 +60,6 @@ fi
 
 packages=(
   "river|https://codeberg.org/river/river|main"
-  "delta|https://git.cnst.dev/cnst/delta|main"
 )
 
 selected() {
@@ -162,8 +180,18 @@ update_one() {
 }
 
 build_one() {
-  echo "==> $1: building"
-  nix build --no-link ".#$1"
+  local name=$1
+
+  echo "==> $name: preparing"
+
+  case "$name" in
+  delta)
+    sync_local_zon delta
+    ;;
+  esac
+
+  echo "==> $name: building"
+  nix build --no-link ".#$name"
 }
 
 failed=()

@@ -72,12 +72,21 @@ pub fn run(loop: *Loop) !void {
             return error.FlushFailed;
         }
 
-        const n = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
+        _ = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
             return err;
         };
 
-        if (n > 0 and loop.fds[wayland_fd].revents & posix.POLL.IN != 0) {
+        const revents = loop.fds[wayland_fd].revents;
+
+        if (revents & (posix.POLL.HUP | posix.POLL.ERR) != 0) {
+            loop.display.cancelRead();
+            log.err("lost the Wayland connection", .{});
+            wm.running = false;
+            return;
+        }
+
+        if (revents & posix.POLL.IN != 0) {
             if (loop.display.readEvents() != .SUCCESS) return error.ReadFailed;
         } else {
             loop.display.cancelRead();
