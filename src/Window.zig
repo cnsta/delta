@@ -176,15 +176,26 @@ pub fn applyFloating(window: *Window, area: geom.Rect) void {
             return;
         }
 
-        window.float_box = .{
-            .x = area.x + @divTrunc(area.width - window.width, 2),
-            .y = area.y + @divTrunc(area.height - window.height, 2),
-            .width = window.width,
-            .height = window.height,
-        };
+        window.float_box = window.initialFloatBox(area);
     }
 
     window.apply(rules.placeFloating(window.float_box, area, window.limits));
+}
+
+fn initialFloatBox(window: *const Window, area: geom.Rect) geom.Rect {
+    const middle = middle: {
+        const parent = window.parent orelse break :middle area.center();
+
+        if (parent.slot.width == 0) break :middle area.center();
+        break :middle parent.slot.center();
+    };
+
+    return .{
+        .x = middle.x - @divTrunc(window.width, 2),
+        .y = middle.y - @divTrunc(window.height, 2),
+        .width = window.width,
+        .height = window.height,
+    };
 }
 
 fn apply(window: *Window, p: rules.Placement) void {
@@ -266,13 +277,8 @@ pub fn setFloating(window: *Window, on: bool) void {
     if (on) {
         ws.layout.remove(window);
 
-        if (window.float_box.width == 0 and window.sized()) {
-            window.float_box = .{
-                .x = window.slot.x,
-                .y = window.slot.y,
-                .width = window.width,
-                .height = window.height,
-            };
+        if (window.float_box.width == 0 and window.slot.width > 0) {
+            window.float_box = window.slot;
         }
     } else {
         window.float_box = window.slot;
@@ -388,6 +394,23 @@ pub fn syncDecoration(window: *Window) void {
     window.decorated_focused = is_focused;
 }
 
+fn syncNewFocus(window: *Window) void {
+    // TODO: multi-seat
+    const seat = wm.seats.first() orelse return;
+
+    if (!Seat.focus_new_windows) {
+        const previous = seat.focused orelse return;
+        seat.dropFocus();
+        seat.focus(previous);
+        return;
+    }
+
+    if (!window.visible()) return;
+
+    seat.focus(window);
+    if (Seat.warp_on_new_window) seat.warpTo(window);
+}
+
 pub fn visible(window: *const Window) bool {
     const ws = window.workspace orelse return false;
     return ws.visible();
@@ -401,7 +424,10 @@ pub fn manage(window: *Window) void {
         window.obj.useSsd();
 
         window.setWorkspace(window.initialWorkspace());
+
         if (window.parent != null) window.setFloating(true);
+
+        window.syncNewFocus();
     }
 
     switch (window.pointer_request) {

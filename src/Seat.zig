@@ -53,6 +53,8 @@ pointer_known: bool = false,
 output: ?*Output = null,
 
 pub const warp_on_focus = true;
+pub const focus_new_windows = true;
+pub const warp_on_new_window = true;
 
 pub const repeat_delay_ms = 400;
 pub const repeat_rate_ms = 40;
@@ -339,13 +341,13 @@ pub fn focus(seat: *Seat, window: ?*Window) void {
     seat.focused = target;
 }
 
-fn dropFocus(seat: *Seat) void {
+pub fn dropFocus(seat: *Seat) void {
     const old = seat.focused orelse return;
     old.focus_count -= 1;
     seat.focused = null;
 }
 
-fn warpTo(seat: *Seat, window: ?*Window) void {
+pub fn warpTo(seat: *Seat, window: ?*Window) void {
     if (window) |w| seat.warp_to = w;
 }
 
@@ -500,6 +502,7 @@ fn setupDefaultBindings(seat: *Seat) void {
 
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .f, .toggle_fullscreen);
+    XkbBinding.create(seat, super_shift, .f, .toggle_floating);
     XkbBinding.create(seat, super, .n, .focus_next);
 
     const arrows = [4]u32{ 0xff51, 0xff53, 0xff52, 0xff54 };
