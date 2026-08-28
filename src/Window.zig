@@ -17,37 +17,44 @@ const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Workspace = @import("Workspace.zig");
 
+const log = std.log.scoped(.window);
+
 const Window = @This();
 
 obj: *river.WindowV1,
 node: *river.NodeV1,
 link: wl.list.Link,
 workspace_link: wl.list.Link,
+
 new: bool = true,
 closed: bool = false,
-branch: ?*Eddy.Branch = null,
-slot: geom.Rect = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
-focus_count: u8 = 0,
-decorated_focused: ?bool = null,
-parent: ?*Window = null,
-hidden: bool = false,
+
 workspace: ?*Workspace = null,
-overshoot: geom.Size = .{ .width = 0, .height = 0 },
-proposed: geom.Size = .{ .width = 0, .height = 0 },
-placed: ?geom.Point = null,
-limits: rules.Limits = .{},
-tiled: ?rules.Edges = null,
+parent: ?*Window = null,
 
 x: i32 = 0,
 y: i32 = 0,
 width: i32 = 0,
 height: i32 = 0,
 
+slot: geom.Rect = geom.Rect.zero,
+branch: ?*Eddy.Branch = null,
+limits: rules.Limits = .{},
+
+placed: ?geom.Point = null,
+proposed: geom.Size = geom.Size.zero,
+tiled: ?rules.Edges = null,
+decorated_focused: ?bool = null,
+hidden: bool = false,
+resizing: bool = false,
+
+overshoot: geom.Size = geom.Size.zero,
+
+focus_count: u8 = 0,
+
 fullscreen: ?*Output = null,
 fullscreen_applied: ?*Output = null,
 fullscreen_request: FullscreenRequest = .none,
-resizing: bool = false,
-
 pointer_request: PointerRequest = .none,
 
 pub const FullscreenRequest = union(enum) {
@@ -64,6 +71,8 @@ pub const PointerRequest = union(enum) {
 
 pub const border_focused = color.rgb(0x4c, 0x7a, 0x5d);
 pub const border_inactive = color.rgb(0x50, 0x49, 0x45);
+
+const max_overshoot = 64;
 
 pub const capabilities: river.WindowV1.Capabilities = .{
     .window_menu = false,
@@ -144,7 +153,7 @@ pub fn syncPosition(window: *Window) void {
 
     const at: geom.Point = .{ .x = origin.x + window.x, .y = origin.y + window.y };
     if (window.placed) |last| {
-        if (last.x == at.x and last.y == at.y) return;
+        if (last.eql(at)) return;
     }
 
     window.node.setPosition(at.x, at.y);
@@ -165,8 +174,8 @@ pub fn applyPlacement(window: *Window, p: rules.Placement) void {
     }
 
     if (p.content.width != window.slot.width or p.content.height != window.slot.height) {
-        window.overshoot = .{ .width = 0, .height = 0 };
-        window.proposed = .{ .width = p.content.width, .height = p.content.height };
+        window.overshoot = geom.Size.zero;
+        window.proposed = p.content.size();
         window.obj.proposeDimensions(p.content.width, p.content.height);
 
         window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
@@ -196,7 +205,7 @@ fn syncFullscreen(window: *Window) void {
         window.obj.exitFullscreen();
         window.obj.informNotFullscreen();
 
-        window.slot = .{ .x = 0, .y = 0, .width = 0, .height = 0 };
+        window.slot = geom.Rect.zero;
         window.placed = null;
     }
 
@@ -216,9 +225,11 @@ fn syncResizing(window: *Window) void {
     }
 
     if (want == window.resizing) return;
+
     if (want) window.obj.informResizeStart() else window.obj.informResizeEnd();
     window.resizing = want;
-    std.log.info("resizing {s}", .{if (want) "start" else "end"});
+
+    log.debug("resize {s}", .{if (want) "start" else "end"});
 }
 
 pub fn syncVisibility(window: *Window) void {
@@ -228,8 +239,6 @@ pub fn syncVisibility(window: *Window) void {
     if (want_hidden) window.obj.hide() else window.obj.show();
     window.hidden = want_hidden;
 }
-
-const max_overshoot = 64;
 
 pub fn sized(window: *const Window) bool {
     return window.width > 0 and window.height > 0;
