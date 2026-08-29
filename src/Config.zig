@@ -3,6 +3,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const zon = std.zon;
 const xkb = @import("xkbcommon");
+const glob = @import("util/glob.zig");
 const Io = std.Io;
 const Action = @import("input/action.zig").Action;
 
@@ -16,6 +17,7 @@ layout: Layout = .{},
 bindings: ?[]const Binding = null,
 on_error: ?[]const []const u8 = null,
 pointer_bindings: ?[]const PointerBinding = null,
+window_rules: []const WindowRule = &.{},
 
 pub const Gaps = struct {
     between: i32 = 8,
@@ -77,6 +79,91 @@ pub const PointerBinding = struct {
 
     pub const Button = enum { left, right, middle, side, extra };
 };
+
+pub const WindowRule = struct {
+    matches: []const Match = &.{},
+
+    excludes: []const Match = &.{},
+    open_floating: ?bool = null,
+    open_fullscreen: ?bool = null,
+    open_workspace: ?u32 = null,
+    open_focused: ?bool = null,
+    open_warp: ?bool = null,
+};
+
+pub const Match = struct {
+    app_id: ?[]const u8 = null,
+    title: ?[]const u8 = null,
+
+    dialog: ?bool = null,
+};
+
+pub const Candidate = struct {
+    app_id: ?[]const u8,
+    title: ?[]const u8,
+    dialog: bool,
+};
+
+pub const Resolved = struct {
+    floating: ?bool = null,
+    fullscreen: ?bool = null,
+    workspace: ?u32 = null,
+    focused: ?bool = null,
+    warp: ?bool = null,
+};
+
+pub fn resolve(config: *const Config, candidate: Candidate) Resolved {
+    var result: Resolved = .{};
+
+    for (config.window_rules) |rule| {
+        if (!applies(rule, candidate)) continue;
+
+        if (rule.open_floating) |v| result.floating = v;
+        if (rule.open_fullscreen) |v| result.fullscreen = v;
+        if (rule.open_workspace) |v| result.workspace = v;
+        if (rule.open_focused) |v| result.focused = v;
+        if (rule.open_warp) |v| result.warp = v;
+    }
+
+    return result;
+}
+
+fn applies(rule: WindowRule, candidate: Candidate) bool {
+    if (rule.matches.len > 0) {
+        var any = false;
+        for (rule.matches) |m| {
+            if (test_(m, candidate)) {
+                any = true;
+                break;
+            }
+        }
+        if (!any) return false;
+    }
+
+    for (rule.excludes) |m| {
+        if (test_(m, candidate)) return false;
+    }
+
+    return true;
+}
+
+fn test_(m: Match, candidate: Candidate) bool {
+    if (m.app_id) |pattern| {
+        const value = candidate.app_id orelse return false;
+        if (!glob.match(pattern, value)) return false;
+    }
+
+    if (m.title) |pattern| {
+        const value = candidate.title orelse return false;
+        if (!glob.match(pattern, value)) return false;
+    }
+
+    if (m.dialog) |want| {
+        if (candidate.dialog != want) return false;
+    }
+
+    return true;
+}
 
 pub const Loaded = struct {
     arena: std.heap.ArenaAllocator,
@@ -155,6 +242,18 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
                         "sensitive, and name the unshifted symbol: \"Return\", " ++
                         "\"space\", \"plus\", \"F1\"",
                     .{name},
+                );
+                return true;
+            }
+        }
+    }
+    for (config.window_rules) |rule| {
+        if (rule.open_workspace) |id| {
+            if (id < 1 or id > 9) {
+                report.* = try std.fmt.allocPrint(
+                    gpa,
+                    "open_workspace must be between 1 and 9, found {d}",
+                    .{id},
                 );
                 return true;
             }
@@ -417,4 +516,107 @@ test "a config with strings survives being freed" {
         \\}
     , &report)).?;
     loaded.deinit();
+}
+
+test "rules match on app_id, title and dialog" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{
+        \\    .window_rules = .{
+        \\        .{
+        \\            .matches = .{ .{ .app_id = "vesktop" } },
+        \\            .open_workspace = 4,
+        \\        },
+        \\        .{
+        \\            .matches = .{ .{ .dialog = true } },
+        \\            .open_floating = true,
+        \\            .open_warp = false,
+        \\        },
+        \\        .{
+        \\            .matches = .{ .{ .app_id = "zen", .title = "*Picture-in-Picture*" } },
+        \\            .open_floating = true,
+        \\        },
+        \\    },
+        \\}
+    , &report)).?;
+    defer loaded.deinit();
+
+    const config = loaded.config;
+
+    const vesktop = config.resolve(.{ .app_id = "vesktop", .title = "Discord", .dialog = false });
+    try std.testing.expectEqual(@as(?u32, 4), vesktop.workspace);
+    try std.testing.expectEqual(@as(?bool, null), vesktop.floating);
+
+    const dialog = config.resolve(.{ .app_id = "nautilus", .title = "Open File", .dialog = true });
+    try std.testing.expectEqual(@as(?bool, true), dialog.floating);
+    try std.testing.expectEqual(@as(?bool, false), dialog.warp);
+
+    // Both conditions in one Match must hold.
+    const pip = config.resolve(.{ .app_id = "zen", .title = "Zen — Picture-in-Picture", .dialog = false });
+    try std.testing.expectEqual(@as(?bool, true), pip.floating);
+
+    const plain = config.resolve(.{ .app_id = "zen", .title = "Zen Browser", .dialog = false });
+    try std.testing.expectEqual(@as(?bool, null), plain.floating);
+}
+
+test "later rules win, and excludes beat matches" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{
+        \\    .window_rules = .{
+        \\        .{ .matches = .{ .{ .dialog = true } }, .open_floating = true },
+        \\        .{
+        \\            .matches = .{ .{ .app_id = "steam" } },
+        \\            .excludes = .{ .{ .title = "Friends List" } },
+        \\            .open_floating = false,
+        \\        },
+        \\        .{ .excludes = .{ .{ .app_id = "zen" } }, .open_focused = true },
+        \\    },
+        \\}
+    , &report)).?;
+    defer loaded.deinit();
+
+    const config = loaded.config;
+
+    // The second rule overrides the first for a steam dialog.
+    const steam = config.resolve(.{ .app_id = "steam", .title = "Settings", .dialog = true });
+    try std.testing.expectEqual(@as(?bool, false), steam.floating);
+
+    // ...unless excluded, in which case only the first rule applied.
+    const friends = config.resolve(.{ .app_id = "steam", .title = "Friends List", .dialog = true });
+    try std.testing.expectEqual(@as(?bool, true), friends.floating);
+
+    // A rule with no matches applies to everything the excludes let through.
+    try std.testing.expectEqual(
+        @as(?bool, true),
+        config.resolve(.{ .app_id = "foot", .title = "foot", .dialog = false }).focused,
+    );
+    try std.testing.expectEqual(
+        @as(?bool, null),
+        config.resolve(.{ .app_id = "zen", .title = "Zen", .dialog = false }).focused,
+    );
+}
+
+test "a window with no app id does not match a pattern for one" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{ .window_rules = .{ .{ .matches = .{ .{ .app_id = "*" } }, .open_floating = true } } }
+    , &report)).?;
+    defer loaded.deinit();
+
+    // Xwayland windows clear their app id, and "*" asks about a value that is
+    // not there rather than about the empty string.
+    try std.testing.expectEqual(
+        @as(?bool, null),
+        loaded.config.resolve(.{ .app_id = null, .title = "x", .dialog = false }).floating,
+    );
 }

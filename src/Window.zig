@@ -14,6 +14,7 @@ const string = @import("util/string.zig");
 const Eddy = @import("layouts/Eddy.zig");
 const rules = @import("layouts/rules.zig");
 
+const Config = @import("Config.zig");
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Workspace = @import("Workspace.zig");
@@ -404,22 +405,6 @@ pub fn syncDecoration(window: *Window) void {
     window.decorated_focused = is_focused;
 }
 
-fn syncNewFocus(window: *Window) void {
-    // TODO: multi-seat
-    const seat = wm.seats.first() orelse return;
-
-    if (!wm.config.input.focus_new_windows) {
-        const previous = seat.focused orelse return;
-        seat.dropFocus();
-        _ = seat.focus(previous);
-        return;
-    }
-
-    if (!window.visible()) return;
-
-    if (seat.focus(window) and Seat.warpOnSpawn()) seat.warpTo(window);
-}
-
 pub fn visible(window: *const Window) bool {
     const ws = window.workspace orelse return false;
     return ws.visible();
@@ -432,12 +417,23 @@ pub fn manage(window: *Window) void {
         window.obj.setCapabilities(capabilities);
         window.obj.useSsd();
 
-        window.setWorkspace(window.initialWorkspace());
+        const applied = wm.config.resolve(.{
+            .app_id = window.app_id,
+            .title = window.title,
+            .dialog = window.parent != null,
+        });
 
-        if (window.parent != null) window.setFloating(true);
+        window.setWorkspace(if (applied.workspace) |id|
+            Workspace.get(id)
+        else
+            window.initialWorkspace());
 
-        window.syncNewFocus();
-        log.info("mapped {s} app_id={?s} title={?s} pid={?d}", .{
+        if (applied.floating orelse (window.parent != null)) window.setFloating(true);
+        if (applied.fullscreen orelse false) window.toggleFullscreen();
+
+        window.syncNewFocus(applied);
+
+        log.debug("mapped {s} app_id={?s} title={?s} pid={?d}", .{
             window.identifier(), window.app_id, window.title, window.pid,
         });
     }
@@ -465,6 +461,22 @@ pub fn manage(window: *Window) void {
 
     window.syncSize();
     window.syncPosition();
+}
+
+fn syncNewFocus(window: *Window, applied: Config.Resolved) void {
+    const seat = wm.seats.first() orelse return;
+
+    if (!(applied.focused orelse wm.config.input.focus_new_windows)) {
+        const previous = seat.focused orelse return;
+        seat.dropFocus();
+        _ = seat.focus(previous);
+        return;
+    }
+
+    if (!window.visible()) return;
+
+    const warp = applied.warp orelse true;
+    if (seat.focus(window) and warp and Seat.warpOnSpawn()) seat.warpTo(window);
 }
 
 fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) void {

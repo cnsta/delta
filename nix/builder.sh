@@ -1,10 +1,11 @@
 #!/usr/bin/env nix-shell
 #!nix-shell -i bash -p bash git nix-prefetch-git zon2nix jq gnused ed alejandra
 #
-# ./update.sh                 update upstream dependencies, then build
-# ./update.sh --update        update upstream dependencies only
-# ./update.sh --build         build local packages only
-# ./update.sh --build delta   build local delta
+# ./builder.sh                update upstream pins, sync local locks, build
+# ./builder.sh --update       update upstream pins only
+# ./builder.sh --sync         regenerate local dependency locks only
+# ./builder.sh --build        build only
+# ./builder.sh --sync delta   regenerate delta's lock
 
 set -euo pipefail
 
@@ -41,6 +42,7 @@ for arg in "$@"; do
   case "$arg" in
   --update) do_update=true ;;
   --build) do_build=true ;;
+  --sync) do_sync=true ;;
   -h | --help)
     usage
     exit 0
@@ -60,6 +62,10 @@ fi
 
 packages=(
   "river|https://codeberg.org/river/river|main"
+)
+
+local_packages=(
+  "delta"
 )
 
 selected() {
@@ -125,7 +131,7 @@ EOF
 
 update_one() {
   local name=$1 url=$2 branch=$3
-  local pkgfile="pkgs/$name/default.nix"
+  local pkgfile="pkgs/$name/package.nix"
   local zonfile="pkgs/$name/build.zig.zon.nix"
 
   echo "==> $name"
@@ -180,18 +186,9 @@ update_one() {
 }
 
 build_one() {
-  local name=$1
-
-  echo "==> $name: preparing"
-
-  case "$name" in
-  delta)
-    sync_local_zon delta
-    ;;
-  esac
-
+  local name=$1 attr=$2
   echo "==> $name: building"
-  nix build --no-link ".#$name"
+  nix build --no-link ".#$attr"
 }
 
 failed=()
@@ -208,6 +205,13 @@ for entry in "${packages[@]}"; do
   selected "$name" || continue
   $do_build || continue
   build_one "$name" || failed+=("build:$name")
+done
+
+for name in "${local_packages[@]}"; do
+  selected "$name" || continue
+  $do_sync || continue
+  echo "==> $name"
+  sync_local_zon "$name" || failed+=("sync:$name")
 done
 
 if [ ${#failed[@]} -gt 0 ]; then
