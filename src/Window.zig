@@ -405,6 +405,19 @@ pub fn syncDecoration(window: *Window) void {
     window.decorated_focused = is_focused;
 }
 
+fn fixedSize(window: *const Window) bool {
+    const min = window.limits.min;
+    const max = window.limits.max;
+
+    if (min.width > 0 and min.width == max.width) return true;
+    if (min.height > 0 and min.height == max.height) return true;
+    return false;
+}
+
+pub fn isDialog(window: *const Window) bool {
+    return window.parent != null or window.fixedSize();
+}
+
 pub fn visible(window: *const Window) bool {
     const ws = window.workspace orelse return false;
     return ws.visible();
@@ -433,8 +446,15 @@ pub fn manage(window: *Window) void {
 
         window.syncNewFocus(applied);
 
-        log.debug("mapped {s} app_id={?s} title={?s} pid={?d}", .{
-            window.identifier(), window.app_id, window.title, window.pid,
+        log.info("mapped {s} app_id={?s} title={?s} dialog={} min={d}x{d} max={d}x{d}", .{
+            window.identifier(),
+            window.app_id,
+            window.title,
+            window.parent != null,
+            window.limits.min.width,
+            window.limits.min.height,
+            window.limits.max.width,
+            window.limits.max.height,
         });
     }
 
@@ -499,8 +519,6 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
 
         .exit_fullscreen_requested => window.fullscreen_request = .exit,
 
-        .parent => |args| window.parent = if (args.parent) |p| fromObj(p) else null,
-
         .pointer_move_requested => |args| if (args.seat) |seat| {
             window.pointer_request = .{ .move = .{
                 .seat = Seat.fromObj(seat),
@@ -515,11 +533,26 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
 
         .identifier => |args| window.setIdentifier(args.identifier),
 
-        .app_id => |args| _ = string.replace(wm.gpa, &window.app_id, args.app_id) catch
-            fatal("Out of memory.", .{}),
+        .parent => |args| {
+            window.parent = if (args.parent) |p| fromObj(p) else null;
+            log.info("parent {s} -> {}", .{ window.identifier(), window.parent != null });
+        },
 
-        .title => |args| _ = string.replace(wm.gpa, &window.title, args.title) catch
-            fatal("Out of memory.", .{}),
+        .app_id => |args| {
+            if (string.replace(wm.gpa, &window.app_id, args.app_id) catch
+                fatal("Out of memory.", .{}))
+            {
+                log.info("app_id {s} = {?s}", .{ window.identifier(), window.app_id });
+            }
+        },
+
+        .title => |args| {
+            if (string.replace(wm.gpa, &window.title, args.title) catch
+                fatal("Out of memory.", .{}))
+            {
+                log.info("title {s} = {?s}", .{ window.identifier(), window.title });
+            }
+        },
 
         .unreliable_pid => |args| window.pid = args.unreliable_pid,
 

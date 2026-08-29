@@ -54,11 +54,9 @@
 
     ${cfg.extraSessionCommands}
 
-    if [ -n "''${NOTIFY_SOCKET-}" ]; then
-      ${pkgs.systemd}/bin/systemd-notify --ready
-    fi
-
     exec ${cfg.windowManager.command}
+
+    NotifyAccess = "all";
   '';
 
   sessionScript = pkgs.writeShellScript "river-session" ''

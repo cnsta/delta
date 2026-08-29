@@ -41,6 +41,7 @@ pub fn main(init: std.process.Init) !void {
     var child_env = try init.environ_map.clone(init.gpa);
     defer child_env.deinit();
     for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
+    _ = child_env.swapRemove("NOTIFY_SOCKET");
 
     const config_path = try Config.defaultPath(init.gpa, init.environ_map);
     defer if (config_path) |path| init.gpa.free(path);
@@ -56,12 +57,15 @@ pub fn main(init: std.process.Init) !void {
 
     if (display.roundtrip() != .SUCCESS) fatal("Roundtrip failed.", .{});
 
+    const notify_socket = init.environ_map.get("NOTIFY_SOCKET");
+
     Delta.init(
         init.gpa,
         init.io,
         child_env,
         loaded,
         config_path,
+        notify_socket,
         globals.window_manager orelse
             fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
         globals.xkb_bindings orelse

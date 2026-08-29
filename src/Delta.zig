@@ -7,6 +7,7 @@ const wl = wayland.client.wl;
 const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
 const spawn = @import("spawn.zig").spawn;
+const notify = @import("notify.zig");
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
@@ -36,6 +37,7 @@ child_env: std.process.Environ.Map,
 config: Config,
 config_arena: std.heap.ArenaAllocator,
 config_path: ?[]const u8 = null,
+notify_socket: ?[]const u8 = null,
 
 default_output: ?*Output = null,
 
@@ -44,6 +46,7 @@ reload_deadline: ?i64 = null,
 
 running: bool = true,
 locked: bool = false,
+notified: bool = false,
 
 dirty: bool = false,
 
@@ -56,6 +59,7 @@ pub fn init(
     child_env: std.process.Environ.Map,
     loaded: Config.Loaded,
     config_path: ?[]const u8,
+    notify_socket: ?[]const u8,
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
@@ -68,6 +72,7 @@ pub fn init(
         .config = loaded.config,
         .config_arena = loaded.arena,
         .config_path = config_path,
+        .notify_socket = notify_socket,
 
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
@@ -147,6 +152,11 @@ fn manageStart(delta: *Delta) void {
     // before the transaction closes.
 
     delta.obj.manageFinish();
+
+    if (!delta.notified) {
+        delta.notified = true;
+        notify.ready(delta.notify_socket);
+    }
 }
 
 fn syncLayerShellDefault(delta: *Delta) void {
