@@ -1,0 +1,83 @@
+// ~/.config/delta/config.zon
+//
+// Every field is optional. Anything omitted keeps its default. Unknown fields
+// are an error rather than being ignored, so a typo tells you about itself.
+.{
+    .gaps = .{ .between = 4, .edge = 4 },
+
+    .border = .{
+        .width = 4,
+        .focused = 0x4c7a5d,
+        .inactive = 0x504945,
+    },
+
+    .input = .{
+        .repeat_delay_ms = 400,
+        .repeat_rate_ms = 40,
+        .focus_follows_pointer = true,
+        .focus_new_windows = true,
+        .cursor = .{ .warp = .focus },
+    },
+
+    .layout = .{
+        .split_bias = 1.0,
+        .resize_step = 32,
+    },
+
+    // Runs when a reload fails, with the diagnostic as its last argument.
+    .on_error = .{ "notify-send", "delta: config error" },
+
+    // Omit this field entirely to keep the built-in bindings. An empty list
+    // means you want none.
+    .bindings = .{
+        .{ .mods = .{.super}, .keys = .{"space"}, .action = .{ .spawn = .{"fuzzel"} } },
+        .{ .mods = .{.super}, .keys = .{"t"}, .action = .{ .spawn = .{"ghostty"} } },
+        .{ .mods = .{.alt}, .keys = .{"z"}, .action = .{ .spawn = .{"foot"} } },
+        .{ .mods = .{.super}, .keys = .{"w"}, .action = .{ .spawn = .{"zen"} } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"w"}, .action = .{ .spawn = .{"zen --private-window"} } },
+        .{ .mods = .{.super}, .keys = .{"i"}, .action = .{ .spawn = .{"byt"} } },
+
+        .{ .mods = .{.super}, .keys = .{"q"}, .action = .close },
+        .{ .mods = .{.super}, .keys = .{"f"}, .action = .toggle_fullscreen },
+        .{ .mods = .{ .super, .shift }, .keys = .{"f"}, .action = .toggle_floating },
+
+        .{ .mods = .{.super}, .keys = .{ "h", "Left" }, .action = .{ .focus_direction = .left } },
+        .{ .mods = .{.super}, .keys = .{ "j", "Down" }, .action = .{ .focus_direction = .down } },
+        .{ .mods = .{.super}, .keys = .{ "k", "Up" }, .action = .{ .focus_direction = .up } },
+        .{ .mods = .{.super}, .keys = .{ "l", "Right" }, .action = .{ .focus_direction = .right } },
+
+        // Swedish layout
+        .{ .mods = .{.super}, .keys = .{ "plus", "KP_Add" }, .action = .{ .resize = .grow_width } },
+        .{ .mods = .{.super}, .keys = .{ "minus", "KP_Subtract" }, .action = .{ .resize = .shrink_width } },
+
+        .{ .mods = .{ .super, .shift }, .keys = .{ "plus", "KP_Add" }, .action = .{ .resize = .grow_height } },
+        .{ .mods = .{ .super, .shift }, .keys = .{ "minus", "KP_Subtract" }, .action = .{ .resize = .shrink_height } },
+
+        .{ .mods = .{.super}, .keys = .{"1"}, .action = .{ .focus_workspace = 1 } },
+        .{ .mods = .{.super}, .keys = .{"2"}, .action = .{ .focus_workspace = 2 } },
+        .{ .mods = .{.super}, .keys = .{"3"}, .action = .{ .focus_workspace = 3 } },
+        .{ .mods = .{.super}, .keys = .{"4"}, .action = .{ .focus_workspace = 4 } },
+        .{ .mods = .{.super}, .keys = .{"5"}, .action = .{ .focus_workspace = 5 } },
+        .{ .mods = .{.super}, .keys = .{"6"}, .action = .{ .focus_workspace = 6 } },
+        .{ .mods = .{.super}, .keys = .{"7"}, .action = .{ .focus_workspace = 7 } },
+        .{ .mods = .{.super}, .keys = .{"8"}, .action = .{ .focus_workspace = 8 } },
+        .{ .mods = .{.super}, .keys = .{"9"}, .action = .{ .focus_workspace = 9 } },
+
+        .{ .mods = .{ .super, .shift }, .keys = .{"1"}, .action = .{ .send_to_workspace = 1 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"2"}, .action = .{ .send_to_workspace = 2 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"3"}, .action = .{ .send_to_workspace = 3 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"4"}, .action = .{ .send_to_workspace = 4 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"5"}, .action = .{ .send_to_workspace = 5 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"6"}, .action = .{ .send_to_workspace = 6 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"7"}, .action = .{ .send_to_workspace = 7 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"8"}, .action = .{ .send_to_workspace = 8 } },
+        .{ .mods = .{ .super, .shift }, .keys = .{"9"}, .action = .{ .send_to_workspace = 9 } },
+
+        .{ .mods = .{ .super, .shift }, .keys = .{"Delete"}, .action = .exit },
+    },
+
+    .pointer_bindings = .{
+        .{ .mods = .{.super}, .button = .left, .action = .pointer_move },
+        .{ .mods = .{.super}, .button = .right, .action = .pointer_resize },
+    },
+}

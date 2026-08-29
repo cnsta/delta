@@ -14,26 +14,33 @@ name: []const u8,
 const mask = linux.IN.CLOSE_WRITE | linux.IN.MOVED_TO | linux.IN.CREATE;
 
 pub fn init(path: []const u8) ?Watcher {
-    const dir = std.fs.path.dirname(path) orelse ".";
     const name = std.fs.path.basename(path);
     if (name.len == 0) return null;
 
-    const fd = posix.inotify_init1(linux.IN.NONBLOCK | linux.IN.CLOEXEC) catch |err| {
-        log.warn("cannot watch for config changes: {t}", .{err});
+    const dir = std.fs.path.dirname(path) orelse ".";
+    const dir_z = posix.toPosixPath(dir) catch {
+        log.warn("config path is too long to watch: {s}", .{path});
         return null;
     };
 
-    _ = posix.inotify_add_watch(fd, dir, mask) catch |err| {
-        log.warn("cannot watch {s}: {t}", .{ dir, err });
-        posix.close(fd);
+    const fd_rc = linux.inotify_init1(linux.IN.NONBLOCK | linux.IN.CLOEXEC);
+    const fd = checked(fd_rc) orelse {
+        log.warn("cannot watch for config changes: errno {d}", .{-signed(fd_rc)});
         return null;
     };
 
-    return .{ .fd = fd, .name = name };
+    const wd_rc = linux.inotify_add_watch(@intCast(fd), &dir_z, mask);
+    if (checked(wd_rc) == null) {
+        log.warn("cannot watch {s}: errno {d}", .{ dir, -signed(wd_rc) });
+        _ = std.c.close(@intCast(fd));
+        return null;
+    }
+
+    return .{ .fd = @intCast(fd), .name = name };
 }
 
 pub fn deinit(watcher: *Watcher) void {
-    posix.close(watcher.fd);
+    _ = std.c.close(watcher.fd);
     watcher.* = undefined;
 }
 
@@ -57,14 +64,19 @@ pub fn drain(watcher: *Watcher) bool {
         while (offset + @sizeOf(Event) <= n) {
             const event: *const Event = @ptrCast(@alignCast(&buffer[offset]));
 
-            if (event.len > 0) {
-                const raw = buffer[offset + @sizeOf(Event) ..][0..event.len];
-                const name = std.mem.sliceTo(raw, 0);
-
+            if (event.getName()) |name| {
                 if (std.mem.eql(u8, name, watcher.name)) changed = true;
             }
 
             offset += @sizeOf(Event) + event.len;
         }
     }
+}
+
+fn checked(rc: usize) ?usize {
+    return if (signed(rc) < 0) null else rc;
+}
+
+fn signed(rc: usize) isize {
+    return @bitCast(rc);
 }
