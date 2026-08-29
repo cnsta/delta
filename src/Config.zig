@@ -36,6 +36,7 @@ pub const Input = struct {
 
     focus_follows_pointer: bool = true,
     focus_new_windows: bool = true,
+    follow_sent_windows: bool = false,
 
     cursor: Cursor = .{},
 };

@@ -15,9 +15,10 @@ change.
 
 **Works:** dwindle-style tiling, workspaces, floating windows, fullscreen,
 keyboard and pointer resize, directional focus, key repeat, pointer warping,
-layer shell (bars, launchers, lock screens), live config reload.
+layer shell (bars, launchers, lock screens), window rules, live config reload.
 
-**Missing:** IPC, window rules, animations, multi-seat beyond the obvious cases.
+**Missing:** IPC, animations, multi-seat beyond the obvious cases, rules that
+re-evaluate when a window renames itself.
 
 ## Building
 
@@ -32,8 +33,6 @@ Run it under river:
 ```
 river -c /path/to/delta-wm
 ```
-
-Or nested inside an existing session, which is the sane way to test changes.
 
 ## Nix
 
@@ -74,15 +73,16 @@ options, everything has a default and anything omitted keeps it.
         .{ .mods = .{.super}, .keys = .{"q"}, .action = .close },
         .{ .mods = .{.super}, .keys = .{ "h", "Left" }, .action = .{ .focus_direction = .left } },
     },
+
+    .window_rules = .{
+        .{ .matches = .{.{ .app_id = "vesktop" }}, .open_workspace = 4 },
+        .{ .matches = .{.{ .app_id = "*", .dialog = true }}, .open_floating = true },
+    },
 }
 ```
 
 ZON rather than a bespoke format: no parser to write, no dependency to add, type
 and field errors for free, and it generates cleanly from Nix.
-
-Key names are xkb keysym names, case sensitive, naming the **unshifted** symbol,
-river resolves at level 0, so `shift` goes in `mods` and the key is still
-`"plus"`, not `"question"`.
 
 ## Design
 

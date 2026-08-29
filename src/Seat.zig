@@ -343,10 +343,7 @@ pub fn dropFocus(seat: *Seat) void {
 }
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {
-    const target = window orelse return;
-    if (seat.focused == target) return;
-
-    seat.warp_to = target;
+    if (window) |w| seat.warp_to = w;
 }
 
 pub fn focusNext(seat: *Seat) void {
@@ -386,6 +383,12 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     if (window.workspace == target) return;
 
     window.setWorkspace(target);
+
+    if (wm.config.input.follow_sent_windows) {
+        seat.dropFocus();
+        seat.focusWorkspace(id);
+        return;
+    }
 
     seat.dropFocus();
     if (seat.focus(null)) seat.warpTo(seat.focused);
