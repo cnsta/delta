@@ -14,7 +14,15 @@ stdenv.mkDerivation (finalAttrs: {
   pname = "delta";
   version = "unstable";
 
-  src = lib.cleanSource ../../..;
+  src = lib.fileset.toSource {
+    root = ../../..;
+    fileset = lib.fileset.unions [
+      ../../../build.zig
+      ../../../build.zig.zon
+      ../../../src
+      ../../../protocol
+    ];
+  };
 
   deps = callPackage ./build.zig.zon.nix {};
 

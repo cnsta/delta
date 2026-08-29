@@ -46,15 +46,14 @@
     packages = forAllPlatforms (pkgs: let
       scope = pkgs.callPackage ./nix/pkgs {};
     in {
-      inherit (scope) river delta;
-      default = scope.river;
+      inherit (scope) river delta-wm;
+      default = scope.delta-wm;
     });
 
     overlays.default = final: _prev: let
       scope = final.callPackage ./nix/pkgs {};
     in {
-      inherit (scope) delta;
-      river = scope.river;
+      inherit (scope) delta-wm river;
     };
 
     formatter = forAllPlatforms (pkgs: pkgs.alejandra);

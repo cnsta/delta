@@ -35,6 +35,30 @@ river -c /path/to/delta-wm
 
 Or nested inside an existing session, which is the sane way to test changes.
 
+## Nix
+
+The flake exposes `packages.delta-wm`, `packages.river` (river 0.5 built with
+the Vulkan renderer available), and `nixosModules.default`.
+
+    {
+      inputs.delta.url = "git+https://git.cnst.dev/cnst/delta";
+
+      # in your NixOS configuration
+      imports = [ inputs.delta.nixosModules.default ];
+
+      programs.river-delta = {
+        enable = true;
+        windowManager.renderer = "vulkan";
+      };
+    }
+
+The module sets up a systemd user session, an XDG portal, and optionally kanshi.
+`programs.river-delta.sessionScript` is the entry point to hand to greetd
+directly, rather than scraping `Exec=` out of a desktop entry.
+
+The config file is not generated. Write `~/.config/delta/config.zon` by hand;
+delta reloads it when you save.
+
 ## Configuration
 
 `$XDG_CONFIG_HOME/delta/config.zon`, falling back to

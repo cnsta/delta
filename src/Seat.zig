@@ -439,12 +439,12 @@ pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
 
 pub fn startPointerMove(seat: *Seat) void {
     const window = seat.hovered orelse return;
-    _ = seat.focus(window);
+    seat.pointerMove(window);
 }
 
 pub fn startPointerResize(seat: *Seat) void {
     const window = seat.hovered orelse return;
-    _ = seat.focus(window);
+    seat.pointerResize(window);
 }
 
 pub fn pointerMove(seat: *Seat, window: *Window) void {

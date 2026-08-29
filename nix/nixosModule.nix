@@ -112,34 +112,32 @@ in {
       description = "The river compositor package.";
     };
 
+    renderer = mkOption {
+      type = types.nullOr (types.enum ["gles2" "vulkan" "pixman"]);
+      default = null;
+      example = "vulkan";
+      description = ''
+        Value for `WLR_RENDERER`. Null lets wlroots choose, which today means
+        GLES2.
+
+        This is a compositor setting, not a window manager one: delta issues no
+        drawing commands at all, so every river window manager renders through
+        whatever this selects.
+
+        `vulkan` requires wlroots to have been built with it. If it was not,
+        river fails at startup with "Cannot create Vulkan renderer: disabled at
+        compile-time".
+      '';
+    };
+
     windowManager = {
       name = mkOption {
         type = types.str;
         default = "delta-wm";
         description = ''
           Name of the window manager. Used for the session comment and, via
-          `command` below, for the binary name -- `delta-wm` rather than
+          `command` below, for the binary name, `delta-wm` rather than
           `delta` because the latter is the git pager on most systems.
-        '';
-      };
-
-      renderer = mkOption {
-        type = types.nullOr (types.enum ["gles2" "vulkan" "pixman"]);
-        default = null;
-        example = "vulkan";
-        description = ''
-          Value for `WLR_RENDERER`. Null lets wlroots choose, which today means
-          GLES2.
-
-          This is a compositor setting, not a window manager one: delta issues no
-          drawing commands at all, so every river window manager renders through
-          whatever this selects. It is not a delta feature and never can be.
-
-          `vulkan` requires wlroots to have been *built* with it. If it was not,
-          river fails at startup with "Cannot create Vulkan renderer: disabled at
-          compile-time" rather than falling back -- on a real session that is a
-          black screen with no way back, so test it nested first. The river
-          package in this flake takes `vulkanSupport` to turn the build flag on.
         '';
       };
 
@@ -256,7 +254,7 @@ in {
     assertions = [
       {
         assertion =
-          cfg.windowManager.renderer
+          cfg.renderer
           != "vulkan"
           || (cfg.package.passthru.vulkanSupport or true);
         message = ''
@@ -308,7 +306,7 @@ in {
         ExecStart = "${cfg.package}/bin/river -c ${initScript}";
         Environment =
           ["PATH=${cfg.path}"]
-          ++ lib.optional (cfg.windowManager.renderer != null) "WLR_RENDERER=${cfg.windowManager.renderer}";
+          ++ lib.optional (cfg.renderer != null) "WLR_RENDERER=${cfg.renderer}";
 
         UnsetEnvironment = "WAYLAND_DISPLAY DISPLAY";
 
