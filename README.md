@@ -48,7 +48,7 @@ the Vulkan renderer available), and `nixosModules.default`.
 
       programs.river-delta = {
         enable = true;
-        windowManager.renderer = "vulkan";
+        renderer = "vulkan";
       };
     }
 
