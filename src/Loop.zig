@@ -6,18 +6,20 @@ const wl = wayland.client.wl;
 
 const wm = &@import("Delta.zig").instance;
 
+const Watcher = @import("Watcher.zig");
+
 const Loop = @This();
 
 const log = std.log.scoped(.default);
 
 display: *wl.Display,
-
 signals: posix.fd_t,
-
-fds: [2]posix.pollfd,
+watcher: ?Watcher,
+fds: [3]posix.pollfd,
 
 const wayland_fd = 0;
 const signal_fd = 1;
+const watch_fd = 2;
 
 pub fn init(display: *wl.Display) !Loop {
     var mask = posix.sigemptyset();
@@ -42,18 +44,29 @@ pub fn init(display: *wl.Display) !Loop {
 
     const flags: u32 = @bitCast(posix.O{ .CLOEXEC = true, .NONBLOCK = true });
     const signals = try posix.signalfd(-1, &mask, flags);
+    const watcher = if (wm.config_path) |path| Watcher.init(path) else null;
+    if (watcher != null) {
+        log.info("watching {s} for changes", .{wm.config_path.?});
+    }
 
     return .{
         .display = display,
         .signals = signals,
+        .watcher = watcher,
         .fds = .{
             .{ .fd = display.getFd(), .events = posix.POLL.IN, .revents = 0 },
             .{ .fd = signals, .events = posix.POLL.IN, .revents = 0 },
+            .{
+                .fd = if (watcher) |w| w.fd else -1,
+                .events = posix.POLL.IN,
+                .revents = 0,
+            },
         },
     };
 }
 
 pub fn deinit(loop: *Loop) void {
+    if (loop.watcher) |*w| w.deinit();
     _ = std.c.close(loop.signals);
 }
 
@@ -84,6 +97,14 @@ pub fn run(loop: *Loop) !void {
         if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
 
         if (loop.fds[signal_fd].revents & posix.POLL.IN != 0) loop.readSignals();
+
+        if (loop.fds[watch_fd].revents & posix.POLL.IN != 0) {
+            if (loop.watcher) |*w| {
+                // Scheduled rather than reloaded: the events for one save
+                // arrive together, and the file may still be being written.
+                if (w.drain()) wm.scheduleReload();
+            }
+        }
 
         wm.tick();
 
