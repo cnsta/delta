@@ -145,7 +145,7 @@ in {
 
       package = mkOption {
         type = types.package;
-        default = riverPkgs.delta;
+        default = riverPkgs.delta-wm;
         defaultText = lib.literalMD "`delta` from this flake, with the local focus patch";
         description = ''
           Window manager package. River 0.4+ spawns the window manager itself

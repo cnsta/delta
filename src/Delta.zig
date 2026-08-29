@@ -40,6 +40,7 @@ config_path: ?[]const u8 = null,
 default_output: ?*Output = null,
 
 stop_deadline: ?i64 = null,
+reload_deadline: ?i64 = null,
 
 running: bool = true,
 locked: bool = false,
@@ -47,6 +48,7 @@ locked: bool = false,
 dirty: bool = false,
 
 pub const stop_timeout_ms = 1000;
+pub const reload_debounce_ms = 50;
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -200,6 +202,10 @@ pub fn reload(delta: *Delta) void {
     delta.reportConfigError(message);
 }
 
+pub fn scheduleReload(delta: *Delta) void {
+    delta.reload_deadline = delta.millis() + reload_debounce_ms;
+}
+
 pub fn deinit(delta: *Delta) void {
     while (delta.seats.first()) |seat| {
         seat.removed = true;
@@ -259,6 +265,10 @@ pub fn pollTimeout(delta: *Delta) i32 {
         if (soonest == null or deadline < soonest.?) soonest = deadline;
     }
 
+    if (delta.reload_deadline) |deadline| {
+        if (soonest == null or deadline < soonest.?) soonest = deadline;
+    }
+
     const at = soonest orelse return -1;
 
     return @intCast(@max(0, at - delta.millis()));
@@ -272,6 +282,13 @@ pub fn tick(delta: *Delta) void {
             std.log.warn("no finished event within {d}ms, exiting anyway", .{stop_timeout_ms});
             delta.running = false;
             return;
+        }
+    }
+
+    if (delta.reload_deadline) |deadline| {
+        if (now >= deadline) {
+            delta.reload_deadline = null;
+            delta.reload();
         }
     }
 

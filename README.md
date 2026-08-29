@@ -1,4 +1,4 @@
-# delta
+# $\Delta$ delta
 
 A window manager for [river](https://codeberg.org/river/river).
 
