@@ -122,6 +122,13 @@ pub async fn execute_command(cmd: CompositorCommand) -> Result<()> {
     let mut reader = BufReader::new(&mut stream);
     let mut line = String::new();
     reader.read_line(&mut line).await?;
+    eprintln!("delta backend: handshake = {line:?}");
+
+    if let Reply::Err(msg) = serde_json::from_str::<Reply>(&line).context("parsing handshake")? {
+        return Err(anyhow!("delta refused the event stream: {msg}"));
+    }
+
+    eprintln!("delta backend: handshake ok, streaming");
 
     match serde_json::from_str::<Reply>(&line)? {
         Reply::Ok => Ok(()),
@@ -159,10 +166,12 @@ pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>
         let event: Event = match serde_json::from_str(&line) {
             Ok(event) => event,
             Err(e) => {
-                log::debug!("skipping an unparseable delta event: {e:?}");
+                eprintln!("delta backend: unparseable event: {e} in {line}");
                 continue;
             }
         };
+
+        eprintln!("delta backend: applied {event:?}");
 
         match event {
             Event::WorkspacesChanged(workspaces) => state.workspaces = workspaces,
