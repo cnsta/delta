@@ -2,19 +2,17 @@ use super::types::{
     ActiveWindow, ActiveWindowGeneric, CompositorCommand, CompositorEvent, CompositorMonitor,
     CompositorService, CompositorState, CompositorWorkspace,
 };
+use std::{
+    collections::HashMap, env, os::unix::net::UnixStream as StdUnixStream, path::PathBuf,
+};
 use crate::services::ServiceEvent;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, os::unix::net::UnixStream as StdUnixStream};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
     sync::broadcast,
 };
-
-pub fn is_available() -> bool {
-    env::var_os("DELTA_SOCKET").is_some()
-}
 
 #[derive(Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -73,6 +71,32 @@ struct State {
     workspaces: Vec<Workspace>,
     windows: Vec<Window>,
     outputs: Vec<Output>,
+}
+
+fn socket_path() -> Option<PathBuf> {
+    if let Some(path) = env::var_os("DELTA_SOCKET") {
+        return Some(PathBuf::from(path));
+    }
+
+    let dir = env::var_os("XDG_RUNTIME_DIR")?;
+    let display = env::var("WAYLAND_DISPLAY").ok()?;
+
+    Some(PathBuf::from(dir).join(format!("delta-{display}.sock")))
+}
+
+pub fn is_available() -> bool {
+    socket_path().is_some_and(|path| path.exists())
+}
+
+async fn connect() -> Result<UnixStream> {
+    let path = socket_path()
+        .ok_or_else(|| anyhow!("cannot locate delta's socket; is delta running?"))?;
+
+    let stream = StdUnixStream::connect(&path)
+        .with_context(|| format!("connecting to {}", path.display()))?;
+    stream.set_nonblocking(true)?;
+
+    UnixStream::from_std(stream).context("converting the delta socket")
 }
 
 pub async fn execute_command(cmd: CompositorCommand) -> Result<()> {
@@ -148,15 +172,6 @@ pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>
     }
 
     Ok(())
-}
-
-async fn connect() -> Result<UnixStream> {
-    let path = env::var_os("DELTA_SOCKET")
-        .ok_or_else(|| anyhow!("DELTA_SOCKET is not set; are you running under delta?"))?;
-
-    let stream = StdUnixStream::connect(path)?;
-    stream.set_nonblocking(true)?;
-    UnixStream::from_std(stream).context("converting the delta socket")
 }
 
 fn map_state(state: &State) -> CompositorState {
