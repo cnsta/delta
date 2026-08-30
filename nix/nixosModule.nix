@@ -266,7 +266,7 @@ in {
       }
     ];
 
-    programs.river.sessionScript = sessionScript;
+    programs.river-delta.sessionScript = sessionScript;
 
     environment.systemPackages =
       [cfg.package cfg.windowManager.package]
@@ -280,7 +280,7 @@ in {
 
     services.dbus.implementation = lib.mkDefault "broker";
 
-    systemd.user.services.river = {
+    systemd.user.services.river-delta = {
       description = "River Wayland compositor session";
       documentation = ["man:river(1)"];
       bindsTo = ["graphical-session.target"];
