@@ -15,7 +15,7 @@
     types
     ;
 
-  cfg = config.programs.river-delta;
+  cfg = config.programs.river;
 
   riverPkgs = pkgs.callPackage ./pkgs {};
 
@@ -62,12 +62,12 @@
   sessionScript = pkgs.writeShellScript "river-session" ''
     set -eu
 
-    if ${systemctl} --user -q is-active river-delta.service; then
+    if ${systemctl} --user -q is-active river.service; then
       echo "river-session: a river session is already running on this user manager." >&2
       exit 1
     fi
 
-    ${systemctl} --user reset-failed river-delta.service river-shutdown.target 2>/dev/null || true
+    ${systemctl} --user reset-failed river.service river-shutdown.target 2>/dev/null || true
 
     ${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY || true
 
@@ -77,11 +77,11 @@
     ${systemctl} --user import-environment \
       XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
 
-    exec ${systemctl} --user start --wait river-delta.service
+    exec ${systemctl} --user start --wait river.service
   '';
 
   sessionPackage = pkgs.writeTextFile {
-    name = "river-delta-session";
+    name = "river-session";
     destination = "/share/wayland-sessions/river.desktop";
     text = ''
       [Desktop Entry]
@@ -98,7 +98,7 @@
     optionalString (cfg.kanshi.config != null)
     " -c ${pkgs.writeText "kanshi-config" cfg.kanshi.config}";
 in {
-  options.programs.river-delta = {
+  options.programs.river = {
     enable = mkEnableOption "the river compositor with a systemd-managed session";
 
     package = mkOption {
@@ -242,7 +242,7 @@ in {
 
         ```nix
         services.greetd.settings.initial_session.command =
-          config.programs.river-delta.sessionScript;
+          config.programs.river.sessionScript;
         ```
       '';
     };
@@ -256,7 +256,7 @@ in {
           != "vulkan"
           || (cfg.package.passthru.vulkanSupport or true);
         message = ''
-          programs.river-delta.renderer = "vulkan" but the configured river
+          programs.river.renderer = "vulkan" but the configured river
           package was built without the Vulkan renderer. river would fail at
           startup with "Cannot create Vulkan renderer: disabled at
           compile-time", which on a real session means a black screen and no
@@ -266,7 +266,7 @@ in {
       }
     ];
 
-    programs.river-delta.sessionScript = sessionScript;
+    programs.river.sessionScript = sessionScript;
 
     environment.systemPackages =
       [cfg.package cfg.windowManager.package]
@@ -280,7 +280,7 @@ in {
 
     services.dbus.implementation = lib.mkDefault "broker";
 
-    systemd.user.services.river-delta = {
+    systemd.user.services.river = {
       description = "River Wayland compositor session";
       documentation = ["man:river(1)"];
       bindsTo = ["graphical-session.target"];
