@@ -63,31 +63,32 @@
         postPatch =
           (old.postPatch or "")
           + ''
+            echo "applying delta backend..."
+            ls src/services/compositor/
             cp ${./contrib/ashell/delta.rs} src/services/compositor/delta.rs
+              substituteInPlace src/services/compositor/mod.rs \
+                --replace-fail 'pub mod generic;' 'pub mod delta;
+              pub mod generic;'
 
-            substituteInPlace src/services/compositor/mod.rs \
-              --replace-fail 'pub mod generic;' 'pub mod delta;
-            pub mod generic;'
+              substituteInPlace src/services/compositor/mod.rs \
+                --replace-fail 'CompositorChoice::Generic => generic::run_listener(&tx).await,' \
+                  'CompositorChoice::Delta => delta::run_listener(&tx).await,
+                          CompositorChoice::Generic => generic::run_listener(&tx).await,'
 
-            substituteInPlace src/services/compositor/mod.rs \
-              --replace-fail 'CompositorChoice::Generic => generic::run_listener(&tx).await,' \
-                'CompositorChoice::Delta => delta::run_listener(&tx).await,
-                        CompositorChoice::Generic => generic::run_listener(&tx).await,'
+              substituteInPlace src/services/compositor/mod.rs \
+                --replace-fail 'CompositorChoice::Generic => generic::execute_command(command).await,' \
+                  'CompositorChoice::Delta => delta::execute_command(command).await,
+                          CompositorChoice::Generic => generic::execute_command(command).await,'
 
-            substituteInPlace src/services/compositor/mod.rs \
-              --replace-fail 'CompositorChoice::Generic => generic::execute_command(command).await,' \
-                'CompositorChoice::Delta => delta::execute_command(command).await,
-                        CompositorChoice::Generic => generic::execute_command(command).await,'
+              substituteInPlace src/services/compositor/mod.rs \
+                --replace-fail '} else if generic::is_available() {' \
+                  '} else if delta::is_available() {
+                          Some(CompositorChoice::Delta)
+                      } else if generic::is_available() {'
 
-            substituteInPlace src/services/compositor/mod.rs \
-              --replace-fail '} else if generic::is_available() {' \
-                '} else if delta::is_available() {
-                        Some(CompositorChoice::Delta)
-                    } else if generic::is_available() {'
-
-            substituteInPlace src/services/compositor/types.rs \
-              --replace-fail '    Generic,' '    Delta,
-                Generic,'
+              substituteInPlace src/services/compositor/types.rs \
+                --replace-fail '    Generic,' '    Delta,
+                  Generic,'
           '';
 
         meta =
