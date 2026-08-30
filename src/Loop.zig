@@ -1,5 +1,6 @@
 const std = @import("std");
 const wayland = @import("wayland");
+const ipc = @import("ipc/Server.zig");
 
 const posix = std.posix;
 const wl = wayland.client.wl;
@@ -15,11 +16,14 @@ const log = std.log.scoped(.default);
 display: *wl.Display,
 signals: posix.fd_t,
 watcher: ?Watcher,
-fds: [3]posix.pollfd,
+fds: [4 + ipc.max_clients]posix.pollfd,
+
+server: ?ipc.Server,
 
 const wayland_fd = 0;
 const signal_fd = 1;
 const watch_fd = 2;
+const ipc_fds = 3;
 
 pub fn init(display: *wl.Display) !Loop {
     var mask = posix.sigemptyset();
@@ -67,6 +71,7 @@ pub fn init(display: *wl.Display) !Loop {
 
 pub fn deinit(loop: *Loop) void {
     if (loop.watcher) |*w| w.deinit();
+    if (loop.server) |*server| server.deinit();
     _ = std.c.close(loop.signals);
 }
 
@@ -77,6 +82,7 @@ pub fn run(loop: *Loop) !void {
         }
 
         if (loop.display.flush() != .SUCCESS) return loop.lost(.read_prepared);
+        if (loop.server) |*server| server.fill(loop.fds[ipc_fds..]);
 
         _ = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
@@ -104,6 +110,10 @@ pub fn run(loop: *Loop) !void {
                 // arrive together, and the file may still be being written.
                 if (w.drain()) wm.scheduleReload();
             }
+        }
+
+        if (loop.server) |*server| {
+            server.dispatch(loop.fds[ipc_fds..], @import("ipc/handler.zig").handle);
         }
 
         wm.tick();
