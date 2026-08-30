@@ -7,6 +7,7 @@ pub const Request = union(enum) {
     windows,
     workspaces,
     focused_window,
+    outputs,
 
     action: Action,
 
@@ -22,6 +23,7 @@ pub const Reply = union(enum) {
     windows: []const Window,
     workspaces: []const Workspace,
     focused_window: ?Window,
+    outputs: []const Output,
 };
 
 pub const Window = struct {
@@ -54,12 +56,22 @@ pub const Event = union(enum) {
 
     window_focus_changed: ?[]const u8,
 
+    outputs_changed: []const Output,
+
     workspace_activated: struct {
         id: u32,
         focused: bool,
     },
 
     config_loaded: struct { failed: bool },
+};
+
+pub const Output = struct {
+    name: []const u8,
+
+    workspace: ?u32,
+
+    focused: bool,
 };
 
 test "a request round-trips through JSON" {
