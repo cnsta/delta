@@ -140,7 +140,7 @@ pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>
     eprintln!("delta backend: connecting");
     let mut stream = connect().await?;
 
-    let mut json = serde_json::to_string(&Request::EventStream)?;
+    let mut json = serde_json::to_string(&Request::EventStream {})?;
     json.push('\n');
     stream.write_all(json.as_bytes()).await?;
     stream.flush().await?;
