@@ -144,6 +144,7 @@ pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>
     json.push('\n');
     stream.write_all(json.as_bytes()).await?;
     stream.flush().await?;
+    eprintln!("delta backend: sent {json:?}");
 
     let mut reader = BufReader::new(stream);
 
