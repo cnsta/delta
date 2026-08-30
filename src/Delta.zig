@@ -8,6 +8,8 @@ const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
 const spawn = @import("spawn.zig").spawn;
 const notify = @import("notify.zig");
+const snapshot = @import("ipc/snapshot.zig");
+const protocol = @import("ipc/protocol.zig");
 
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
@@ -241,21 +243,34 @@ pub fn deinit(delta: *Delta) void {
 fn publish(delta: *Delta) void {
     const loop = delta.loop orelse return;
     const server = if (loop.server) |*s| s else return;
-
     if (!server.hasStreamingClients()) return;
+
+    var arena = std.heap.ArenaAllocator.init(delta.gpa);
+    defer arena.deinit();
+
+    const state = snapshot.build(arena.allocator()) catch return;
 
     var buf: std.ArrayList(u8) = .empty;
     defer buf.deinit(delta.gpa);
 
-    // snapshot.write(delta, &buf) catch return; // snapshot not quite finished
+    inline for (.{
+        protocol.Event{ .outputs_changed = state.outputs },
+        protocol.Event{ .workspaces_changed = state.workspaces },
+        protocol.Event{ .windows_changed = state.windows },
+    }) |event| {
+        const line = std.json.Stringify.valueAlloc(arena.allocator(), event, .{}) catch return;
+        buf.appendSlice(delta.gpa, line) catch return;
+        buf.append(delta.gpa, '\n') catch return;
+    }
 
     if (std.mem.eql(u8, buf.items, delta.ipc_last.items)) return;
 
-    server.publish(buf.items);
+    server.publishRaw(buf.items);
 
-    delta.ipc_last.deinit(delta.gpa);
-    delta.ipc_last = buf;
-    buf = .empty;
+    delta.ipc_last.clearRetainingCapacity();
+    delta.ipc_last.appendSlice(delta.gpa, buf.items) catch {
+        delta.ipc_last.clearRetainingCapacity();
+    };
 }
 
 fn reportConfigError(delta: *Delta, message: []const u8) void {
