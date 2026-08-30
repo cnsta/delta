@@ -15,7 +15,7 @@
     types
     ;
 
-  cfg = config.programs.river;
+  cfg = config.programs.river-delta;
 
   riverPkgs = pkgs.callPackage ./pkgs {};
 
@@ -98,7 +98,7 @@
     optionalString (cfg.kanshi.config != null)
     " -c ${pkgs.writeText "kanshi-config" cfg.kanshi.config}";
 in {
-  options.programs.river = {
+  options.programs.river-delta = {
     enable = mkEnableOption "the river compositor with a systemd-managed session";
 
     package = mkOption {
@@ -256,7 +256,7 @@ in {
           != "vulkan"
           || (cfg.package.passthru.vulkanSupport or true);
         message = ''
-          programs.river.renderer = "vulkan" but the configured river
+          programs.river-delta.renderer = "vulkan" but the configured river
           package was built without the Vulkan renderer. river would fail at
           startup with "Cannot create Vulkan renderer: disabled at
           compile-time", which on a real session means a black screen and no
