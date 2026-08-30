@@ -137,10 +137,6 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |seat| seat.maybeDestroy();
     }
     {
-        var it = list.safeIterator(Workspace, .link, &delta.workspaces);
-        while (it.next()) |workspace| workspace.maybeDestroy();
-    }
-    {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.manage();
     }
@@ -159,6 +155,10 @@ fn manageStart(delta: *Delta) void {
     {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.applyWarp();
+    }
+    {
+        var it = list.safeIterator(Workspace, .link, &delta.workspaces);
+        while (it.next()) |workspace| workspace.maybeDestroy();
     }
 
     delta.syncLayerShellDefault();
