@@ -2,12 +2,10 @@ use super::types::{
     ActiveWindow, ActiveWindowGeneric, CompositorCommand, CompositorEvent, CompositorMonitor,
     CompositorService, CompositorState, CompositorWorkspace,
 };
-use std::{
-    collections::HashMap, env, os::unix::net::UnixStream as StdUnixStream, path::PathBuf,
-};
 use crate::services::ServiceEvent;
 use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, env, os::unix::net::UnixStream as StdUnixStream, path::PathBuf};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     net::UnixStream,
@@ -86,15 +84,13 @@ fn socket_path() -> Option<PathBuf> {
 
 pub fn is_available() -> bool {
     let path = socket_path();
-    eprintln!("delta backend: socket_path = {path:?}");
     let ok = path.is_some_and(|p| p.exists());
-    eprintln!("delta backend: is_available = {ok}");
     ok
 }
 
 async fn connect() -> Result<UnixStream> {
-    let path = socket_path()
-        .ok_or_else(|| anyhow!("cannot locate delta's socket; is delta running?"))?;
+    let path =
+        socket_path().ok_or_else(|| anyhow!("cannot locate delta's socket; is delta running?"))?;
 
     let stream = StdUnixStream::connect(&path)
         .with_context(|| format!("connecting to {}", path.display()))?;
@@ -122,13 +118,10 @@ pub async fn execute_command(cmd: CompositorCommand) -> Result<()> {
     let mut reader = BufReader::new(&mut stream);
     let mut line = String::new();
     reader.read_line(&mut line).await?;
-    eprintln!("delta backend: handshake = {line:?}");
 
     if let Reply::Err(msg) = serde_json::from_str::<Reply>(&line).context("parsing handshake")? {
         return Err(anyhow!("delta refused the event stream: {msg}"));
     }
-
-    eprintln!("delta backend: handshake ok, streaming");
 
     match serde_json::from_str::<Reply>(&line)? {
         Reply::Ok => Ok(()),
@@ -137,14 +130,12 @@ pub async fn execute_command(cmd: CompositorCommand) -> Result<()> {
 }
 
 pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>>) -> Result<()> {
-    eprintln!("delta backend: connecting");
     let mut stream = connect().await?;
 
     let mut json = serde_json::to_string(&Request::EventStream {})?;
     json.push('\n');
     stream.write_all(json.as_bytes()).await?;
     stream.flush().await?;
-    eprintln!("delta backend: sent {json:?}");
 
     let mut reader = BufReader::new(stream);
 
@@ -167,12 +158,10 @@ pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>
         let event: Event = match serde_json::from_str(&line) {
             Ok(event) => event,
             Err(e) => {
-                eprintln!("delta backend: unparseable event: {e} in {line}");
+                log::debug!("skipping an unparseable delta event: {e} in {line}");
                 continue;
             }
         };
-
-        eprintln!("delta backend: applied {event:?}");
 
         match event {
             Event::WorkspacesChanged(workspaces) => state.workspaces = workspaces,
@@ -223,11 +212,10 @@ fn map_state(state: &State) -> CompositorState {
                 name: ws.id.to_string(),
                 monitor_id: output_index.get(monitor.as_str()).copied(),
                 monitor,
-                windows: counts.get(&ws.id).copied().unwrap_or(if ws.populated {
-                    1
-                } else {
-                    0
-                }),
+                windows: counts
+                    .get(&ws.id)
+                    .copied()
+                    .unwrap_or(if ws.populated { 1 } else { 0 }),
                 is_special: false,
                 has_urgent: false,
                 window_classes: classes.remove(&ws.id).unwrap_or_default(),
