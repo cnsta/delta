@@ -64,8 +64,12 @@
           (old.postPatch or "")
           + ''
             echo "applying delta backend..."
+            set -x
+            pwd
             ls src/services/compositor/
             cp ${./contrib/ashell/delta.rs} src/services/compositor/delta.rs
+              ls -l src/services/compositor/
+              set +x
               substituteInPlace src/services/compositor/mod.rs \
                 --replace-fail 'pub mod generic;' 'pub mod delta;
               pub mod generic;'
