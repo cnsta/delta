@@ -85,7 +85,11 @@ fn socket_path() -> Option<PathBuf> {
 }
 
 pub fn is_available() -> bool {
-    socket_path().is_some_and(|path| path.exists())
+    let path = socket_path();
+    eprintln!("delta backend: socket_path = {path:?}");
+    let ok = path.is_some_and(|p| p.exists());
+    eprintln!("delta backend: is_available = {ok}");
+    ok
 }
 
 async fn connect() -> Result<UnixStream> {
@@ -126,6 +130,7 @@ pub async fn execute_command(cmd: CompositorCommand) -> Result<()> {
 }
 
 pub async fn run_listener(tx: &broadcast::Sender<ServiceEvent<CompositorService>>) -> Result<()> {
+    eprintln!("delta backend: connecting");
     let mut stream = connect().await?;
 
     let mut json = serde_json::to_string(&Request::EventStream)?;
