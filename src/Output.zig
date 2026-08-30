@@ -8,6 +8,7 @@ const fatal = std.process.fatal;
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
+const string = @import("util/string.zig");
 
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
@@ -31,6 +32,9 @@ workspace: *Workspace,
 previous: ?*Workspace = null,
 
 shell: ?*river.LayerShellOutputV1 = null,
+
+name: ?[]const u8 = null,
+wl_output: ?*wl.Output = null,
 
 pub fn create(river_output: *river.OutputV1) void {
     const output = wm.gpa.create(Output) catch fatal("Out of memory.", .{});
@@ -59,6 +63,9 @@ pub fn fromObj(obj: *river.OutputV1) *Output {
 
 pub fn maybeDestroy(output: *Output) void {
     if (!output.removed) return;
+
+    string.free(wm.gpa, &output.name);
+    if (output.wl_output) |obj| obj.release();
 
     output.workspace.output = null;
     output.previous = null;
@@ -139,7 +146,13 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
             output.height = args.height;
         },
 
-        .wl_output => {},
+        .wl_output => |args| {
+            const obj = wm.registry.bind(args.name, wl.Output, 4) catch
+                fatal("Out of memory.", .{});
+
+            output.wl_output = obj;
+            obj.setListener(*Output, wlOutputListener, output);
+        },
     }
 }
 
@@ -155,5 +168,13 @@ fn shellListener(
             .width = args.width,
             .height = args.height,
         },
+    }
+}
+
+fn wlOutputListener(_: *wl.Output, event: wl.Output.Event, output: *Output) void {
+    switch (event) {
+        .name => |args| _ = string.replace(wm.gpa, &output.name, args.name) catch
+            fatal("Out of memory.", .{}),
+        else => {},
     }
 }

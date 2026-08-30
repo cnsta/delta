@@ -205,12 +205,9 @@ fn read(server: *Server, client: *Client, handler: Handler) void {
 
 fn write(server: *Server, client: *Client, bytes: []const u8) void {
     if (client.out_len == 0) {
-        const n = posix.write(client.fd, bytes) catch |err| switch (err) {
-            error.WouldBlock => 0,
-            else => {
-                server.drop(client);
-                return;
-            },
+        const n = writeSome(client.fd, bytes) orelse {
+            server.drop(client);
+            return;
         };
         if (n == bytes.len) return;
 
@@ -232,14 +229,22 @@ fn buffer(server: *Server, client: *Client, bytes: []const u8) void {
     client.out_len += bytes.len;
 }
 
-fn flush(server: *Server, client: *Client) void {
-    const n = posix.write(client.fd, client.out[0..client.out_len]) catch |err| switch (err) {
-        error.WouldBlock => return,
-        else => {
-            server.drop(client);
-            return;
-        },
+fn writeSome(fd: posix.fd_t, bytes: []const u8) ?usize {
+    const rc = linux.write(fd, bytes.ptr, bytes.len);
+    if (!syscall.failed(rc)) return rc;
+
+    return switch (syscall.errno(rc)) {
+        @intFromEnum(linux.E.AGAIN), @intFromEnum(linux.E.INTR) => 0,
+        else => null,
     };
+}
+
+fn flush(server: *Server, client: *Client) void {
+    const n = writeSome(client.fd, client.out[0..client.out_len]) orelse {
+        server.drop(client);
+        return;
+    };
+    if (n == 0) return;
 
     const rest = client.out_len - n;
     std.mem.copyForwards(u8, client.out[0..rest], client.out[n..client.out_len]);

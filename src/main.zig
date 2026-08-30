@@ -69,6 +69,8 @@ pub fn main(init: std.process.Init) !void {
         loaded,
         config_path,
         notify_socket,
+        ipc_path,
+        registry,
         globals.window_manager orelse
             fatal("river_window_manager_v1 not supported by the Wayland server.", .{}),
         globals.xkb_bindings orelse

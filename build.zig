@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) void {
     scanner.generate("river_window_manager_v1", 4);
     scanner.generate("river_xkb_bindings_v1", 3);
     scanner.generate("river_layer_shell_v1", 1);
+    scanner.generate("wl_output", 4);
     const wayland = b.createModule(.{ .root_source_file = scanner.result });
 
     const xkbcommon = b.dependency("xkbcommon", .{}).module("xkbcommon");

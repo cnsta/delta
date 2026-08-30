@@ -1,13 +1,14 @@
 const std = @import("std");
 const wayland = @import("wayland");
-const ipc = @import("ipc/Server.zig");
 
 const posix = std.posix;
 const wl = wayland.client.wl;
 
 const wm = &@import("Delta.zig").instance;
+const handler = @import("ipc/handler.zig");
 
 const Watcher = @import("Watcher.zig");
+const Server = @import("ipc/Server.zig");
 
 const Loop = @This();
 
@@ -16,9 +17,9 @@ const log = std.log.scoped(.default);
 display: *wl.Display,
 signals: posix.fd_t,
 watcher: ?Watcher,
-fds: [4 + ipc.max_clients]posix.pollfd,
+fds: [4 + Server.max_clients]posix.pollfd,
 
-server: ?ipc.Server,
+server: ?Server,
 
 const wayland_fd = 0;
 const signal_fd = 1;
@@ -54,7 +55,7 @@ pub fn init(display: *wl.Display) !Loop {
         log.info("watching {s} for changes", .{wm.config_path.?});
     }
 
-    const server = if (wm.ipc_path) |path| ipc.Server.init(path) else null;
+    const server = if (wm.ipc_path) |path| Server.init(path) else null;
 
     var loop: Loop = .{
         .display = display,
@@ -73,6 +74,8 @@ pub fn init(display: *wl.Display) !Loop {
 
 pub fn deinit(loop: *Loop) void {
     if (loop.watcher) |*w| w.deinit();
+    if (wm.server) |*server| server.fill(loop.fds[ipc_fds..]);
+    if (wm.server) |*server| server.dispatch(loop.fds[ipc_fds..], handler.handle);
     if (loop.server) |*server| server.deinit();
     _ = std.c.close(loop.signals);
 }

@@ -52,7 +52,7 @@ fn workspaces(arena: Allocator) ![]const protocol.Workspace {
     while (it.next()) |workspace| {
         try out.append(arena, .{
             .id = workspace.id,
-            .output = if (workspace.output) |o| o.name() else null,
+            .output = if (workspace.output) |o| o.name else null,
             .active = workspace.output != null,
             .focused = focusedWorkspace() == workspace,
             .populated = workspace.windows.first() != null,
@@ -67,9 +67,11 @@ fn outputs(arena: Allocator) ![]const protocol.Output {
 
     var it = wm.outputs.iterator(.forward);
     while (it.next()) |output| {
+        const name = output.name orelse continue;
+
         try out.append(arena, .{
-            .name = output.name(),
-            .workspace = if (output.workspace) |ws| ws.id else null,
+            .name = name,
+            .workspace = output.workspace.id,
             .focused = focusedOutput() == output,
         });
     }

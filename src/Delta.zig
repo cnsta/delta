@@ -16,6 +16,7 @@ const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
 const Config = @import("Config.zig");
+const Server = @import("ipc/Server.zig");
 
 const Delta = @This();
 
@@ -40,8 +41,11 @@ config: Config,
 config_arena: std.heap.ArenaAllocator,
 config_path: ?[]const u8 = null,
 notify_socket: ?[]const u8 = null,
+
+server: ?Server = null,
 ipc_path: ?[]const u8 = null,
 ipc_last: std.ArrayList(u8) = .empty,
+registry: *wl.Registry,
 
 default_output: ?*Output = null,
 
@@ -64,6 +68,8 @@ pub fn init(
     loaded: Config.Loaded,
     config_path: ?[]const u8,
     notify_socket: ?[]const u8,
+    ipc_path: ?[]const u8,
+    registry: *wl.Registry,
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
@@ -76,8 +82,11 @@ pub fn init(
         .config = loaded.config,
         .config_arena = loaded.arena,
         .config_path = config_path,
-        .notify_socket = notify_socket,
 
+        .notify_socket = notify_socket,
+        .ipc_path = ipc_path,
+
+        .registry = registry,
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
         .layer_shell = layer_shell_obj,
@@ -92,6 +101,8 @@ pub fn init(
     instance.windows.init();
     instance.seats.init();
     instance.workspaces.init();
+
+    instance.server = if (ipc_path) |path| Server.init(path) else null;
 }
 
 pub fn listener(
@@ -238,11 +249,12 @@ pub fn deinit(delta: *Delta) void {
     }
 
     delta.config_arena.deinit();
+    if (delta.server) |*server| server.deinit();
+    delta.ipc_last.deinit(delta.gpa);
 }
 
 fn publish(delta: *Delta) void {
-    const loop = delta.loop orelse return;
-    const server = if (loop.server) |*s| s else return;
+    const server = if (delta.server) |*s| s else return;
     if (!server.hasStreamingClients()) return;
 
     var arena = std.heap.ArenaAllocator.init(delta.gpa);
