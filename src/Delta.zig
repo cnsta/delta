@@ -38,6 +38,8 @@ config: Config,
 config_arena: std.heap.ArenaAllocator,
 config_path: ?[]const u8 = null,
 notify_socket: ?[]const u8 = null,
+ipc_path: ?[]const u8 = null,
+ipc_last: std.ArrayList(u8) = .empty,
 
 default_output: ?*Output = null,
 
@@ -147,10 +149,9 @@ fn manageStart(delta: *Delta) void {
     }
 
     delta.syncLayerShellDefault();
+    delta.publish();
 
-    // TODO(ipc): snapshot + diff + publish goes here, after every mutation and
-    // before the transaction closes.
-
+    delta.obj.manageFinish();
     delta.obj.manageFinish();
 
     if (!delta.notified) {
@@ -235,6 +236,26 @@ pub fn deinit(delta: *Delta) void {
     }
 
     delta.config_arena.deinit();
+}
+
+fn publish(delta: *Delta) void {
+    const loop = delta.loop orelse return;
+    const server = if (loop.server) |*s| s else return;
+
+    if (!server.hasStreamingClients()) return;
+
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(delta.gpa);
+
+    // snapshot.write(delta, &buf) catch return; // snapshot not quite finished
+
+    if (std.mem.eql(u8, buf.items, delta.ipc_last.items)) return;
+
+    server.publish(buf.items);
+
+    delta.ipc_last.deinit(delta.gpa);
+    delta.ipc_last = buf;
+    buf = .empty;
 }
 
 fn reportConfigError(delta: *Delta, message: []const u8) void {
