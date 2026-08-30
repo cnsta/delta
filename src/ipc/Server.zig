@@ -255,3 +255,17 @@ pub fn publish(server: *Server, line: []const u8) void {
         server.write(client, "\n");
     }
 }
+
+pub fn hasStreamingClients(server: *const Server) bool {
+    for (server.clients) |client| {
+        if (client.fd >= 0 and client.streaming) return true;
+    }
+    return false;
+}
+
+pub fn publishRaw(server: *Server, bytes: []const u8) void {
+    for (&server.clients) |*client| {
+        if (client.fd < 0 or !client.streaming) continue;
+        server.write(client, bytes);
+    }
+}
