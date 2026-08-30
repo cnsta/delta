@@ -19,8 +19,6 @@ signals: posix.fd_t,
 watcher: ?Watcher,
 fds: [4 + Server.max_clients]posix.pollfd,
 
-server: ?Server,
-
 const wayland_fd = 0;
 const signal_fd = 1;
 const watch_fd = 2;
@@ -55,13 +53,10 @@ pub fn init(display: *wl.Display) !Loop {
         log.info("watching {s} for changes", .{wm.config_path.?});
     }
 
-    const server = if (wm.ipc_path) |path| Server.init(path) else null;
-
     var loop: Loop = .{
         .display = display,
         .signals = signals,
         .watcher = watcher,
-        .server = server,
         .fds = @splat(.{ .fd = -1, .events = posix.POLL.IN, .revents = 0 }),
     };
 
@@ -74,9 +69,6 @@ pub fn init(display: *wl.Display) !Loop {
 
 pub fn deinit(loop: *Loop) void {
     if (loop.watcher) |*w| w.deinit();
-    if (wm.server) |*server| server.fill(loop.fds[ipc_fds..]);
-    if (wm.server) |*server| server.dispatch(loop.fds[ipc_fds..], handler.handle);
-    if (loop.server) |*server| server.deinit();
     _ = std.c.close(loop.signals);
 }
 
@@ -87,7 +79,7 @@ pub fn run(loop: *Loop) !void {
         }
 
         if (loop.display.flush() != .SUCCESS) return loop.lost(.read_prepared);
-        if (loop.server) |*server| server.fill(loop.fds[ipc_fds..]);
+        if (wm.server) |*server| server.fill(loop.fds[ipc_fds..]);
 
         _ = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
@@ -117,7 +109,7 @@ pub fn run(loop: *Loop) !void {
             }
         }
 
-        if (loop.server) |*server| {
+        if (wm.server) |*server| {
             server.dispatch(loop.fds[ipc_fds..], @import("ipc/handler.zig").handle);
         }
 

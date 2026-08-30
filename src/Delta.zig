@@ -163,8 +163,6 @@ fn manageStart(delta: *Delta) void {
 
     delta.syncLayerShellDefault();
     delta.publish();
-
-    delta.obj.manageFinish();
     delta.obj.manageFinish();
 
     if (!delta.notified) {
