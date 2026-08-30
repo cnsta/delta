@@ -62,12 +62,12 @@
   sessionScript = pkgs.writeShellScript "river-session" ''
     set -eu
 
-    if ${systemctl} --user -q is-active river.service; then
+    if ${systemctl} --user -q is-active river-delta.service; then
       echo "river-session: a river session is already running on this user manager." >&2
       exit 1
     fi
 
-    ${systemctl} --user reset-failed river.service river-shutdown.target 2>/dev/null || true
+    ${systemctl} --user reset-failed river-delta.service river-shutdown.target 2>/dev/null || true
 
     ${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY || true
 
@@ -77,11 +77,11 @@
     ${systemctl} --user import-environment \
       XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE
 
-    exec ${systemctl} --user start --wait river.service
+    exec ${systemctl} --user start --wait river-delta.service
   '';
 
   sessionPackage = pkgs.writeTextFile {
-    name = "river-session";
+    name = "river-delta-session";
     destination = "/share/wayland-sessions/river.desktop";
     text = ''
       [Desktop Entry]
