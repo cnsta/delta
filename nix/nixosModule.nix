@@ -29,6 +29,7 @@
       "XDG_SESSION_DESKTOP"
       "XDG_SESSION_TYPE"
       "XDG_RUNTIME_DIR"
+      "DELTA_SOCKET"
       "PATH"
     ]
     ++ lib.optional cfg.xwayland.enable "DISPLAY"
