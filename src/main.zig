@@ -59,6 +59,9 @@ pub fn main(init: std.process.Init) !void {
 
     const notify_socket = init.environ_map.get("NOTIFY_SOCKET");
 
+    const ipc_path = try socketPath(init.gpa, init.environ_map);
+    defer if (ipc_path) |p| init.gpa.free(p);
+
     Delta.init(
         init.gpa,
         init.io,
@@ -80,10 +83,23 @@ pub fn main(init: std.process.Init) !void {
     var loop = try Loop.init(display);
     defer loop.deinit();
 
+    if (ipc_path) |path| try child_env.put("DELTA_SOCKET", path);
+
     try loop.run();
     Delta.instance.deinit();
 
     std.log.info("delta exiting", .{});
+}
+
+fn socketPath(gpa: std.mem.Allocator, environ: *const std.process.Environ.Map) !?[]const u8 {
+    const dir = environ.get("XDG_RUNTIME_DIR") orelse {
+        std.log.info("no XDG_RUNTIME_DIR, IPC disabled", .{});
+        return null;
+    };
+    const display = environ.get("WAYLAND_DISPLAY") orelse "wayland-0";
+
+    const path = try std.fmt.allocPrint(gpa, "{s}/delta-{s}.sock", .{ dir, display });
+    return path;
 }
 
 fn loadConfig(gpa: std.mem.Allocator, io: std.Io, path: ?[]const u8) !Config.Loaded {
