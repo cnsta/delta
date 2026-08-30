@@ -18,7 +18,7 @@ use tokio::{
 #[serde(rename_all = "snake_case")]
 enum Request {
     Action(Action),
-    EventStream,
+    EventStream {},
 }
 
 #[derive(Serialize)]
