@@ -48,25 +48,27 @@ pub fn init(display: *wl.Display) !Loop {
 
     const flags: u32 = @bitCast(posix.O{ .CLOEXEC = true, .NONBLOCK = true });
     const signals = try posix.signalfd(-1, &mask, flags);
+
     const watcher = if (wm.config_path) |path| Watcher.init(path) else null;
     if (watcher != null) {
         log.info("watching {s} for changes", .{wm.config_path.?});
     }
 
-    return .{
+    const server = if (wm.ipc_path) |path| ipc.Server.init(path) else null;
+
+    var loop: Loop = .{
         .display = display,
         .signals = signals,
         .watcher = watcher,
-        .fds = .{
-            .{ .fd = display.getFd(), .events = posix.POLL.IN, .revents = 0 },
-            .{ .fd = signals, .events = posix.POLL.IN, .revents = 0 },
-            .{
-                .fd = if (watcher) |w| w.fd else -1,
-                .events = posix.POLL.IN,
-                .revents = 0,
-            },
-        },
+        .server = server,
+        .fds = @splat(.{ .fd = -1, .events = posix.POLL.IN, .revents = 0 }),
     };
+
+    loop.fds[wayland_fd].fd = display.getFd();
+    loop.fds[signal_fd].fd = signals;
+    loop.fds[watch_fd].fd = if (watcher) |w| w.fd else -1;
+
+    return loop;
 }
 
 pub fn deinit(loop: *Loop) void {
