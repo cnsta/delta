@@ -216,7 +216,7 @@ fn apply(window: *Window, p: rules.Placement) void {
     window.syncTiled();
 
     if (!p.content.size().eql(window.slot.size())) {
-        log.info("{s} propose {d}x{d} at {d},{d}", .{
+        log.debug("{s} propose {d}x{d} at {d},{d}", .{
             if (window.floating) "float" else "tile",
             p.content.width,
             p.content.height,
@@ -325,7 +325,7 @@ fn syncResizing(window: *Window) void {
     if (want) window.obj.informResizeStart() else window.obj.informResizeEnd();
     window.resizing = want;
 
-    log.info("resize {s}", .{if (want) "start" else "end"});
+    log.debug("resize {s}", .{if (want) "start" else "end"});
 }
 
 pub fn syncVisibility(window: *Window) void {
@@ -446,7 +446,7 @@ pub fn manage(window: *Window) void {
 
         window.syncNewFocus(applied);
 
-        log.info("mapped {s} app_id={?s} title={?s} dialog={} min={d}x{d} max={d}x{d}", .{
+        log.debug("mapped {s} app_id={?s} title={?s} dialog={} min={d}x{d} max={d}x{d}", .{
             window.identifier(),
             window.app_id,
             window.title,
@@ -535,14 +535,14 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
 
         .parent => |args| {
             window.parent = if (args.parent) |p| fromObj(p) else null;
-            log.info("parent {s} -> {}", .{ window.identifier(), window.parent != null });
+            log.debug("parent {s} -> {}", .{ window.identifier(), window.parent != null });
         },
 
         .app_id => |args| {
             if (string.replace(wm.gpa, &window.app_id, args.app_id) catch
                 fatal("Out of memory.", .{}))
             {
-                log.info("app_id {s} = {?s}", .{ window.identifier(), window.app_id });
+                log.debug("app_id {s} = {?s}", .{ window.identifier(), window.app_id });
             }
         },
 
@@ -550,7 +550,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
             if (string.replace(wm.gpa, &window.title, args.title) catch
                 fatal("Out of memory.", .{}))
             {
-                log.info("title {s} = {?s}", .{ window.identifier(), window.title });
+                log.debug("title {s} = {?s}", .{ window.identifier(), window.title });
             }
         },
 
