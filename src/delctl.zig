@@ -95,6 +95,8 @@ fn requestFor(cmd: []const u8) ?protocol.Request {
     return null;
 }
 
+// -- connection ----------------------------------------------------------
+
 fn connect(arena: std.mem.Allocator, environ: *const std.process.Environ.Map) !posix.fd_t {
     const path = try socketPath(arena, environ) orelse {
         try write(2, "delctl: cannot locate delta's socket; is delta running?\n");
@@ -179,6 +181,8 @@ fn watch(arena: std.mem.Allocator, fd: posix.fd_t) !void {
         buf.shrinkRetainingCapacity(rest);
     }
 }
+
+// -- output --------------------------------------------------------------
 
 fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
     const parsed = std.json.parseFromSliceLeaky(
