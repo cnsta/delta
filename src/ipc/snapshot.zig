@@ -1,5 +1,7 @@
 const std = @import("std");
+const wayland = @import("wayland");
 
+const wl = wayland.client.wl;
 const wm = &@import("../Delta.zig").instance;
 const list = @import("../util/list.zig");
 const protocol = @import("protocol.zig");
@@ -69,14 +71,53 @@ fn outputs(arena: Allocator) ![]const protocol.Output {
     while (it.next()) |output| {
         const name = output.name orelse continue;
 
+        const usable = output.usableArea();
+
         try out.append(arena, .{
             .name = name,
+            .make = output.make,
+            .model = output.model,
+
+            .x = output.x,
+            .y = output.y,
+            .width = output.width,
+            .height = output.height,
+
+            .usable = .{
+                .x = usable.x,
+                .y = usable.y,
+                .width = usable.width,
+                .height = usable.height,
+            },
+
+            .mode = if (output.mode) |m| .{
+                .width = m.width,
+                .height = m.height,
+                .refresh = m.refresh,
+            } else null,
+
+            .scale = output.scale,
+            .transform = transformName(output.transform),
+
             .workspace = output.workspace.id,
             .focused = focusedOutput() == output,
         });
     }
 
     return out.items;
+}
+
+fn transformName(transform: wl.Output.Transform) []const u8 {
+    return switch (transform) {
+        .normal => "normal",
+        .@"90" => "90",
+        .@"180" => "180",
+        .@"270" => "270",
+        .flipped => "flipped",
+        .flipped_90 => "flipped-90",
+        .flipped_180 => "flipped-180",
+        .flipped_270 => "flipped-270",
+    };
 }
 
 /// TODO: multi-seat

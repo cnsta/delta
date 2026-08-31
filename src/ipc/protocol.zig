@@ -68,10 +68,31 @@ pub const Event = union(enum) {
 
 pub const Output = struct {
     name: []const u8,
-
+    make: ?[]const u8,
+    model: ?[]const u8,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    usable: Rect,
+    mode: ?Mode,
+    scale: i32,
+    transform: []const u8,
     workspace: ?u32,
-
     focused: bool,
+};
+
+pub const Mode = struct {
+    width: i32,
+    height: i32,
+    refresh: i32,
+};
+
+pub const Rect = struct {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
 };
 
 test "a request round-trips through JSON" {
