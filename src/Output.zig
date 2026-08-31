@@ -99,10 +99,14 @@ pub fn maybeDestroy(output: *Output) void {
     if (output.shell) |shell| shell.destroy();
 
     string.free(wm.gpa, &output.name);
+    string.free(wm.gpa, &output.description);
 
-    if (output.wl_output) |obj| obj.release();
+    if (!wm.shutting_down) {
+        if (output.wl_output) |obj| obj.release();
+        if (output.shell) |shell| shell.destroy();
+        output.obj.destroy();
+    }
 
-    output.obj.destroy();
     output.link.remove();
     wm.gpa.destroy(output);
 }

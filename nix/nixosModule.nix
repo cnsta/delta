@@ -1,4 +1,3 @@
-# Modified from dmkhitaryan's nix module.
 {
   config,
   lib,
@@ -29,7 +28,6 @@
       "XDG_SESSION_DESKTOP"
       "XDG_SESSION_TYPE"
       "XDG_RUNTIME_DIR"
-      "DELTA_SOCKET"
       "PATH"
     ]
     ++ lib.optional cfg.xwayland.enable "DISPLAY"
@@ -56,8 +54,6 @@
     ${cfg.extraSessionCommands}
 
     exec ${cfg.windowManager.command}
-
-    NotifyAccess = "all";
   '';
 
   sessionScript = pkgs.writeShellScript "river-session" ''
@@ -68,8 +64,7 @@
       exit 1
     fi
 
-    ${systemctl} --user reset-failed river-delta.service river-shutdown.target 2>/dev/null || true
-
+    ${systemctl} --user reset-failed river-delta.service 2>/dev/null || true
     ${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY || true
 
     export XDG_CURRENT_DESKTOP=river
@@ -119,13 +114,13 @@ in {
         Value for `WLR_RENDERER`. Null lets wlroots choose, which today means
         GLES2.
 
-        This is a compositor setting, not a window manager one: delta issues no
-        drawing commands at all, so every river window manager renders through
-        whatever this selects.
+        A compositor setting, not a window manager one: delta issues no drawing
+        commands at all, so every river window manager renders through whatever
+        this selects.
 
         `vulkan` requires wlroots to have been built with it. If it was not,
         river fails at startup with "Cannot create Vulkan renderer: disabled at
-        compile-time".
+        compile-time", which on a real session is a black screen.
       '';
     };
 
@@ -134,18 +129,17 @@ in {
         type = types.str;
         default = "delta-wm";
         description = ''
-          Name of the window manager. Used for the session comment and, via
-          `command` below, for the binary name, `delta-wm` rather than
-          `delta` because the latter is the git pager on most systems.
+          Name of the window manager binary. `delta-wm` rather than `delta`
+          because the latter is the git pager on most systems.
         '';
       };
 
       package = mkOption {
         type = types.package;
         default = riverPkgs.delta-wm;
-        defaultText = lib.literalMD "`delta` from this flake, with the local focus patch";
+        defaultText = lib.literalMD "`delta` from this flake";
         description = ''
-          Window manager package. River 0.4+ spawns the window manager itself
+          Window manager package. River 0.5 spawns the window manager itself
           over a private socket, so it cannot be a separate systemd unit.
         '';
       };
@@ -168,14 +162,12 @@ in {
       // {default = true;};
 
     trayTarget.enable =
-      mkEnableOption ''
-        a tray.target user target.
-      ''
+      mkEnableOption "a tray.target user target for StatusNotifier applets"
       // {default = true;};
 
-    portal = {
-      enable = mkEnableOption "xdg-desktop-portal with the wlr and gtk backends" // {default = true;};
-    };
+    portal.enable =
+      mkEnableOption "xdg-desktop-portal with the wlr and gtk backends"
+      // {default = true;};
 
     kanshi = {
       enable = mkEnableOption "the kanshi output management daemon";
@@ -206,7 +198,7 @@ in {
       ];
       description = ''
         PATH for the compositor and everything it spawns, including every
-        `launch` keybinding. systemd unit specifiers are expanded.
+        spawn binding. systemd unit specifiers are expanded.
       '';
     };
 
@@ -222,8 +214,8 @@ in {
       default = "";
       example = "systemctl --user start my-thing.service";
       description = ''
-        Shell run inside the compositor after the environment is published but
-        before readiness is signalled.
+        Shell run inside the compositor after the environment is published and
+        before river execs the window manager.
       '';
     };
 
@@ -231,7 +223,10 @@ in {
       type = types.listOf types.str;
       default = [];
       example = ["XCURSOR_THEME" "XCURSOR_SIZE"];
-      description = "Additional variables to publish to systemd and D-Bus, if set in the compositor.";
+      description = ''
+        Additional variables to publish to systemd and D-Bus, if set in the
+        compositor's environment when the init script runs.
+      '';
     };
 
     sessionScript = mkOption {
@@ -243,7 +238,7 @@ in {
 
         ```nix
         services.greetd.settings.initial_session.command =
-          config.programs.river.sessionScript;
+          config.programs.river-delta.sessionScript;
         ```
       '';
     };
@@ -275,11 +270,9 @@ in {
       ++ cfg.extraPackages;
 
     programs.xwayland.enable = cfg.xwayland.enable;
-    security.polkit.enable = true;
+
     services.graphical-desktop.enable = true;
     services.displayManager.sessionPackages = [sessionPackage];
-
-    services.dbus.implementation = lib.mkDefault "broker";
 
     systemd.user.services.river-delta = {
       description = "River Wayland compositor session";
@@ -292,11 +285,8 @@ in {
         ["graphical-session-pre.target"]
         ++ lib.optional cfg.xdgAutostart.enable "xdg-desktop-autostart.target";
       after = ["graphical-session-pre.target"];
-
       unitConfig = {
-        OnFailure = "river-shutdown.target";
-        OnSuccess = "river-shutdown.target";
-        CollectMode = "inactive-or-failed";
+        PropagatesStopTo = ["graphical-session.target"];
       };
 
       serviceConfig = {
@@ -306,34 +296,13 @@ in {
         Environment =
           ["PATH=${cfg.path}"]
           ++ lib.optional (cfg.renderer != null) "WLR_RENDERER=${cfg.renderer}";
-
         UnsetEnvironment = "WAYLAND_DISPLAY DISPLAY";
-
         ExecStopPost = "${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP";
-
         Restart = "no";
         TimeoutStartSec = "30s";
         TimeoutStopSec = "10s";
         Slice = "session.slice";
         OOMScoreAdjust = -500;
-      };
-    };
-
-    systemd.user.targets.river-shutdown = {
-      description = "Shut down a running river session";
-      conflicts = [
-        "graphical-session.target"
-        "graphical-session-pre.target"
-        "xdg-desktop-autostart.target"
-      ];
-      after = [
-        "graphical-session.target"
-        "graphical-session-pre.target"
-        "xdg-desktop-autostart.target"
-      ];
-      unitConfig = {
-        DefaultDependencies = "no";
-        StopWhenUnneeded = true;
       };
     };
 
@@ -353,6 +322,7 @@ in {
       serviceConfig = {
         ExecStart = "${cfg.kanshi.package}/bin/kanshi${kanshiConfigFile}";
         Restart = "always";
+
         RestartSec = 1;
         Slice = "session.slice";
       };

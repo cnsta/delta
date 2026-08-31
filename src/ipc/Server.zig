@@ -133,7 +133,14 @@ pub const Handler = *const fn (request: []const u8, streaming: *bool) ?[]const u
 fn accept(server: *Server) void {
     while (true) {
         const rc = linux.accept4(server.fd, null, null, linux.SOCK.NONBLOCK | linux.SOCK.CLOEXEC);
-        if (syscall.failed(rc)) return;
+
+        if (syscall.failed(rc)) {
+            const err = syscall.errno(rc);
+            if (err != @intFromEnum(linux.E.AGAIN) and err != @intFromEnum(linux.E.INTR)) {
+                log.err("accept failed: errno {d}", .{err});
+            }
+            return;
+        }
 
         const fd: posix.fd_t = @intCast(rc);
 

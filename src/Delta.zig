@@ -55,6 +55,7 @@ reload_deadline: ?i64 = null,
 running: bool = true,
 locked: bool = false,
 notified: bool = false,
+shutting_down: bool = false,
 
 dirty: bool = false,
 
@@ -229,6 +230,8 @@ pub fn scheduleReload(delta: *Delta) void {
 }
 
 pub fn deinit(delta: *Delta) void {
+    delta.shutting_down = true;
+
     while (delta.seats.first()) |seat| {
         seat.removed = true;
         seat.maybeDestroy();
