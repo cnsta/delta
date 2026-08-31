@@ -97,14 +97,11 @@ pub fn fill(server: *const Server, fds: []posix.pollfd) void {
     fds[0] = .{ .fd = server.fd, .events = posix.POLL.IN, .revents = 0 };
 
     for (server.clients, fds[1..]) |client, *entry| {
-        entry.* = .{
-            .fd = client.fd,
-            .events = if (client.out_len > 0)
-                posix.POLL.IN | posix.POLL.OUT
-            else
-                posix.POLL.IN,
-            .revents = 0,
-        };
+        var events: i16 = 0;
+        if (!client.streaming) events |= posix.POLL.IN;
+        if (client.out_len > 0) events |= posix.POLL.OUT;
+
+        entry.* = .{ .fd = client.fd, .events = events, .revents = 0 };
     }
 }
 
@@ -170,7 +167,16 @@ fn drop(server: *Server, client: *Client) void {
 }
 
 fn read(server: *Server, client: *Client, handler: Handler) void {
-    if (client.streaming) return;
+    if (client.streaming) {
+        var scratch: [256]u8 = undefined;
+        while (true) {
+            const n = posix.read(client.fd, &scratch) catch return;
+            if (n == 0) {
+                server.drop(client);
+                return;
+            }
+        }
+    }
 
     const room = client.in[client.in_len..];
     if (room.len == 0) {

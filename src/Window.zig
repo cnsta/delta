@@ -216,21 +216,25 @@ fn apply(window: *Window, p: rules.Placement) void {
     window.syncTiled();
 
     if (!p.content.size().eql(window.slot.size())) {
-        log.debug("{s} propose {d}x{d} at {d},{d}", .{
-            if (window.floating) "float" else "tile",
-            p.content.width,
-            p.content.height,
-            p.content.x,
-            p.content.y,
-        });
-
         window.overshoot = geom.Size.zero;
         window.propose(p.content.size());
         window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
     }
 
     window.slot = p.content;
-    window.setPosition(p.content.x, p.content.y);
+    window.placeInSlot();
+}
+
+fn placeInSlot(window: *Window) void {
+    if (!window.sized()) {
+        window.setPosition(window.slot.x, window.slot.y);
+        return;
+    }
+
+    window.setPosition(
+        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
+        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
+    );
 }
 
 fn propose(window: *Window, size: geom.Size) void {
@@ -367,16 +371,6 @@ fn syncSize(window: *Window) void {
 
     window.obj.proposeDimensions(want.width, want.height);
     window.proposed = want;
-}
-
-pub fn center(window: *Window) void {
-    if (window.floating) return;
-    if (window.slot.width == 0 or !window.sized()) return;
-
-    window.setPosition(
-        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
-        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
-    );
 }
 
 pub fn focused(window: *const Window) bool {

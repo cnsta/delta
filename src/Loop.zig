@@ -89,32 +89,22 @@ pub fn run(loop: *Loop) !void {
         const revents = loop.fds[wayland_fd].revents;
 
         if (revents & (posix.POLL.HUP | posix.POLL.ERR) != 0) return loop.lost(.read_prepared);
-
         if (revents & posix.POLL.IN != 0) {
-            // readEvents releases the reader lock whether it succeeds or fails.
             if (loop.display.readEvents() != .SUCCESS) return loop.lost(.read_released);
         } else {
             loop.display.cancelRead();
         }
 
         if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
-
         if (loop.fds[signal_fd].revents & posix.POLL.IN != 0) loop.readSignals();
-
         if (loop.fds[watch_fd].revents & posix.POLL.IN != 0) {
             if (loop.watcher) |*w| {
-                // Scheduled rather than reloaded: the events for one save
-                // arrive together, and the file may still be being written.
                 if (w.drain()) wm.scheduleReload();
             }
         }
 
-        if (wm.server) |*server| {
-            server.dispatch(loop.fds[ipc_fds..], @import("ipc/handler.zig").handle);
-        }
-
+        if (wm.server) |*server| server.dispatch(loop.fds[ipc_fds..], handler.handle);
         wm.tick();
-
         if (wm.dirty) {
             wm.dirty = false;
             wm.obj.manageDirty();
@@ -126,7 +116,6 @@ const ReadLock = enum { read_prepared, read_released };
 
 fn lost(loop: *Loop, held: ReadLock) error{ConnectionLost}!void {
     if (held == .read_prepared) loop.display.cancelRead();
-
     if (wm.stopping()) {
         wm.running = false;
         return;

@@ -54,7 +54,9 @@ pub fn drain(watcher: *Watcher) bool {
         const n = posix.read(watcher.fd, &buffer) catch |err| switch (err) {
             error.WouldBlock => return changed,
             else => {
-                log.err("failed to read config watch: {t}", .{err});
+                log.err("config watch failed, giving up: {t}", .{err});
+                _ = std.c.close(watcher.fd);
+                watcher.fd = -1;
                 return changed;
             },
         };

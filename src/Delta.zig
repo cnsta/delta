@@ -183,9 +183,6 @@ fn syncLayerShellDefault(delta: *Delta) void {
 }
 
 fn renderStart(delta: *Delta) void {
-    var it = list.safeIterator(Window, .link, &delta.windows);
-    while (it.next()) |window| window.center();
-
     delta.obj.renderFinish();
 }
 

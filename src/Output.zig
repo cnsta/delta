@@ -74,9 +74,6 @@ pub fn fromObj(obj: *river.OutputV1) *Output {
 pub fn maybeDestroy(output: *Output) void {
     if (!output.removed) return;
 
-    string.free(wm.gpa, &output.name);
-    if (output.wl_output) |obj| obj.release();
-
     output.workspace.output = null;
     output.previous = null;
 
@@ -87,7 +84,8 @@ pub fn maybeDestroy(output: *Output) void {
     while (windows.next()) |window| {
         if (window.fullscreen != output and window.fullscreen_applied != output) continue;
 
-        window.obj.informNotFullscreen();
+        if (!wm.shutting_down) window.obj.informNotFullscreen();
+
         window.fullscreen = null;
         window.fullscreen_applied = null;
         window.slot = geom.Rect.zero;
@@ -95,8 +93,6 @@ pub fn maybeDestroy(output: *Output) void {
     }
 
     if (wm.default_output == output) wm.default_output = null;
-
-    if (output.shell) |shell| shell.destroy();
 
     string.free(wm.gpa, &output.name);
     string.free(wm.gpa, &output.description);
