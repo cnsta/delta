@@ -35,8 +35,7 @@ shell: ?*river.LayerShellOutputV1 = null,
 
 name: ?[]const u8 = null,
 wl_output: ?*wl.Output = null,
-make: ?[]const u8 = null,
-model: ?[]const u8 = null,
+description: ?[]const u8 = null,
 mode: ?Mode = null,
 scale: i32 = 1,
 transform: wl.Output.Transform = .normal,
@@ -100,8 +99,6 @@ pub fn maybeDestroy(output: *Output) void {
     if (output.shell) |shell| shell.destroy();
 
     string.free(wm.gpa, &output.name);
-    string.free(wm.gpa, &output.make);
-    string.free(wm.gpa, &output.model);
 
     if (output.wl_output) |obj| obj.release();
 
@@ -192,12 +189,10 @@ fn wlOutputListener(_: *wl.Output, event: wl.Output.Event, output: *Output) void
     switch (event) {
         .geometry => |args| {
             output.transform = args.transform;
-
-            _ = string.replace(wm.gpa, &output.make, args.make) catch
-                fatal("Out of memory.", .{});
-            _ = string.replace(wm.gpa, &output.model, args.model) catch
-                fatal("Out of memory.", .{});
         },
+
+        .description => |args| _ = string.replace(wm.gpa, &output.description, args.description) catch
+            fatal("Out of memory.", .{}),
 
         .mode => |args| {
             if (!args.flags.current) return;

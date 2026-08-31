@@ -224,16 +224,20 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
                     if (output.focused) "  (focused)" else "",
                 });
 
-                if (output.make) |make| {
-                    try w.print(arena, "  {s} {s}\n", .{ make, output.model orelse "" });
+                if (output.description) |desc| {
+                    try w.print(arena, "  {s}\n", .{desc});
                 }
 
                 if (output.mode) |mode| {
-                    try w.print(arena, "  mode       {d}x{d}@{d}.{d:0>2}Hz\n", .{
+                    const refresh = mode.refresh;
+
+                    try w.print(arena, "  mode       {d}x{d}@{d}.{d}{d}{d}Hz\n", .{
                         mode.width,
                         mode.height,
-                        @divTrunc(mode.refresh, 1000),
-                        @divTrunc(@rem(mode.refresh, 1000), 10),
+                        @divTrunc(refresh, 1000),
+                        @divTrunc(@rem(refresh, 1000), 100),
+                        @divTrunc(@rem(refresh, 100), 10),
+                        @rem(refresh, 10),
                     });
                 } else {
                     try w.appendSlice(arena, "  mode       unknown\n");

@@ -75,8 +75,7 @@ fn outputs(arena: Allocator) ![]const protocol.Output {
 
         try out.append(arena, .{
             .name = name,
-            .make = output.make,
-            .model = output.model,
+            .description = output.description,
 
             .x = output.x,
             .y = output.y,

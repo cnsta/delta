@@ -68,8 +68,7 @@ pub const Event = union(enum) {
 
 pub const Output = struct {
     name: []const u8,
-    make: ?[]const u8,
-    model: ?[]const u8,
+    description: ?[]const u8,
     x: i32,
     y: i32,
     width: i32,
