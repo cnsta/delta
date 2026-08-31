@@ -35,6 +35,17 @@ shell: ?*river.LayerShellOutputV1 = null,
 
 name: ?[]const u8 = null,
 wl_output: ?*wl.Output = null,
+make: ?[]const u8 = null,
+model: ?[]const u8 = null,
+mode: ?Mode = null,
+scale: i32 = 1,
+transform: wl.Output.Transform = .normal,
+
+pub const Mode = struct {
+    width: i32,
+    height: i32,
+    refresh: i32,
+};
 
 pub fn create(river_output: *river.OutputV1) void {
     const output = wm.gpa.create(Output) catch fatal("Out of memory.", .{});
@@ -87,6 +98,12 @@ pub fn maybeDestroy(output: *Output) void {
     if (wm.default_output == output) wm.default_output = null;
 
     if (output.shell) |shell| shell.destroy();
+
+    string.free(wm.gpa, &output.name);
+    string.free(wm.gpa, &output.make);
+    string.free(wm.gpa, &output.model);
+
+    if (output.wl_output) |obj| obj.release();
 
     output.obj.destroy();
     output.link.remove();
@@ -173,8 +190,30 @@ fn shellListener(
 
 fn wlOutputListener(_: *wl.Output, event: wl.Output.Event, output: *Output) void {
     switch (event) {
+        .geometry => |args| {
+            output.transform = args.transform;
+
+            _ = string.replace(wm.gpa, &output.make, args.make) catch
+                fatal("Out of memory.", .{});
+            _ = string.replace(wm.gpa, &output.model, args.model) catch
+                fatal("Out of memory.", .{});
+        },
+
+        .mode => |args| {
+            if (!args.flags.current) return;
+
+            output.mode = .{
+                .width = args.width,
+                .height = args.height,
+                .refresh = args.refresh,
+            };
+        },
+
+        .scale => |args| output.scale = args.factor,
+
         .name => |args| _ = string.replace(wm.gpa, &output.name, args.name) catch
             fatal("Out of memory.", .{}),
+
         else => {},
     }
 }

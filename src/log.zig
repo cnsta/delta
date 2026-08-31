@@ -9,6 +9,7 @@ pub const Scope = enum {
     window,
     output,
     seat,
+    ipc,
 };
 
 pub var level: std.log.Level = switch (builtin.mode) {
@@ -39,7 +40,8 @@ fn logFn(
 }
 
 pub fn parseScopes(spec: []const u8) !void {
-    scopes = std.EnumSet(Scope).initEmpty();
+    const subtractive = spec.len > 0 and spec[0] == '~';
+    scopes = if (subtractive) .initFull() else .initEmpty();
 
     var it = std.mem.splitScalar(u8, spec, ',');
     while (it.next()) |raw| {

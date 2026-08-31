@@ -140,17 +140,14 @@ fn socketPath(
 
 fn readLine(arena: std.mem.Allocator, fd: posix.fd_t) ![]const u8 {
     var buf: std.ArrayList(u8) = .empty;
-    var chunk: [4096]u8 = undefined;
 
     while (true) {
-        const n = try posix.read(fd, &chunk);
+        var byte: [1]u8 = undefined;
+        const n = try posix.read(fd, &byte);
         if (n == 0) return error.ConnectionClosed;
 
-        try buf.appendSlice(arena, chunk[0..n]);
-
-        if (std.mem.indexOfScalar(u8, buf.items, '\n')) |end| {
-            return buf.items[0..end];
-        }
+        if (byte[0] == '\n') return buf.items;
+        try buf.append(arena, byte[0]);
     }
 }
 
