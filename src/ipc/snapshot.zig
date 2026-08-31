@@ -117,6 +117,8 @@ fn transformName(transform: wl.Output.Transform) []const u8 {
         .flipped_90 => "flipped-90",
         .flipped_180 => "flipped-180",
         .flipped_270 => "flipped-270",
+
+        _ => "unknown",
     };
 }
 

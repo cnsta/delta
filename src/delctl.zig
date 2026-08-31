@@ -215,13 +215,52 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
             try w.append(arena, '\n');
         },
 
-        .outputs => |outputs| {
-            for (outputs) |output| {
-                try w.print(arena, "{s}\n  workspace {?d}{s}\n", .{
+        .outputs => |list| {
+            for (list, 0..) |output, i| {
+                if (i > 0) try w.append(arena, '\n');
+
+                try w.print(arena, "{s}{s}\n", .{
                     output.name,
-                    output.workspace,
                     if (output.focused) "  (focused)" else "",
                 });
+
+                if (output.make) |make| {
+                    try w.print(arena, "  {s} {s}\n", .{ make, output.model orelse "" });
+                }
+
+                if (output.mode) |mode| {
+                    try w.print(arena, "  mode       {d}x{d}@{d}.{d:0>2}Hz\n", .{
+                        mode.width,
+                        mode.height,
+                        @divTrunc(mode.refresh, 1000),
+                        @divTrunc(@rem(mode.refresh, 1000), 10),
+                    });
+                } else {
+                    try w.appendSlice(arena, "  mode       unknown\n");
+                }
+
+                try w.print(arena, "  logical    {d}x{d} at {d},{d}\n", .{
+                    output.width, output.height, output.x, output.y,
+                });
+
+                if (output.usable.width != output.width or
+                    output.usable.height != output.height)
+                {
+                    try w.print(arena, "  usable     {d}x{d} at {d},{d}\n", .{
+                        output.usable.width,
+                        output.usable.height,
+                        output.usable.x,
+                        output.usable.y,
+                    });
+                }
+
+                try w.print(arena, "  scale      {d}\n", .{output.scale});
+
+                if (!std.mem.eql(u8, output.transform, "normal")) {
+                    try w.print(arena, "  transform  {s}\n", .{output.transform});
+                }
+
+                try w.print(arena, "  workspace  {?d}\n", .{output.workspace});
             }
         },
 
