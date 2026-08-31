@@ -190,8 +190,12 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
         arena,
         reply_json,
         .{ .ignore_unknown_fields = true },
-    ) catch {
-        try write(2, "delctl: could not parse delta's reply\n");
+    ) catch |err| {
+        var msg: std.ArrayList(u8) = .empty;
+        try msg.print(arena, "delctl: could not parse delta's reply: {t}\n{s}\n", .{
+            err, reply_json,
+        });
+        try write(2, msg.items);
         std.process.exit(1);
     };
 
