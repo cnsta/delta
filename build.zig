@@ -45,6 +45,21 @@ pub fn build(b: *std.Build) void {
     exe.root_module.linkSystemLibrary("xkbcommon", .{});
     b.installArtifact(exe);
 
+    const ctl = b.addExecutable(.{
+        .name = "delctl",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/delctl.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    ctl.root_module.link_libc = true;
+    b.installArtifact(ctl);
+
+    const ctl_step = b.step("ctl", "Build delctl only");
+    ctl_step.dependOn(&b.addInstallArtifact(ctl, .{}).step);
+
     const run_step = b.step("run", "Run delta");
     const run_cmd = b.addRunArtifact(exe);
     run_step.dependOn(&run_cmd.step);
