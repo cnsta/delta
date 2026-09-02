@@ -175,7 +175,7 @@ pub fn repeatDeadline(seat: *const Seat) ?i64 {
 // -- the manage sequence -----------------------------------------------
 
 pub fn manage(seat: *Seat) void {
-    seat.syncBindings(!wm.locked);
+    if (wm.locked_applied != wm.locked) seat.syncBindings(!wm.locked);
 
     seat.updateOutput();
 
@@ -333,6 +333,7 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
     }
 
     seat.focused = target;
+    wm.ipc_dirty = true;
     return true;
 }
 
@@ -340,6 +341,7 @@ pub fn dropFocus(seat: *Seat) void {
     const old = seat.focused orelse return;
     old.focus_count -= 1;
     seat.focused = null;
+    wm.ipc_dirty = true;
 }
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {

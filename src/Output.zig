@@ -56,6 +56,7 @@ pub fn create(river_output: *river.OutputV1) void {
         .workspace = workspace,
     };
     workspace.output = output;
+    wm.ipc_dirty = true;
 
     output.obj.setListener(*Output, listener, output);
     wm.outputs.append(output);
@@ -73,6 +74,7 @@ pub fn fromObj(obj: *river.OutputV1) *Output {
 
 pub fn maybeDestroy(output: *Output) void {
     if (!output.removed) return;
+    wm.ipc_dirty = true;
 
     output.workspace.output = null;
     output.previous = null;
@@ -166,6 +168,7 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
 
             output.wl_output = obj;
             obj.setListener(*Output, wlOutputListener, output);
+            wm.ipc_dirty = true;
         },
     }
 }

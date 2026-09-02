@@ -30,6 +30,7 @@ workspace_link: wl.list.Link,
 
 new: bool = true,
 closed: bool = false,
+raised: bool = false,
 
 workspace: ?*Workspace = null,
 parent: ?*Window = null,
@@ -103,6 +104,7 @@ pub fn create(river_window: *river.WindowV1) void {
     };
     window.obj.setListener(*Window, listener, window);
     wm.windows.append(window);
+    wm.ipc_dirty = true;
 }
 
 pub fn fromObj(obj: *river.WindowV1) *Window {
@@ -111,6 +113,7 @@ pub fn fromObj(obj: *river.WindowV1) *Window {
 
 pub fn maybeDestroy(window: *Window) void {
     if (!window.closed) return;
+    wm.ipc_dirty = true;
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetWindow(window);
@@ -143,6 +146,7 @@ fn initialWorkspace(window: *Window) *Workspace {
 
 pub fn setWorkspace(window: *Window, target: *Workspace) void {
     if (window.workspace == target) return;
+    wm.ipc_dirty = true;
 
     if (window.workspace) |old| {
         old.layout.remove(window);
@@ -256,6 +260,7 @@ fn currentOutput(window: *Window) ?*Output {
 
 pub fn toggleFullscreen(window: *Window) void {
     window.fullscreen = if (window.fullscreen != null) null else window.currentOutput();
+    wm.ipc_dirty = true;
 }
 
 fn syncFullscreen(window: *Window) void {
@@ -276,6 +281,20 @@ fn syncFullscreen(window: *Window) void {
     window.fullscreen_applied = window.fullscreen;
 }
 
+pub fn raiseFloating(ws: *Workspace) void {
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (!window.floating or !window.visible()) continue;
+        if (window.raised) continue;
+
+        window.node.placeTop();
+
+        var others = ws.windows.iterator(.forward);
+        while (others.next()) |other| other.raised = false;
+        window.raised = true;
+    }
+}
+
 pub fn toggleFloating(window: *Window) void {
     window.setFloating(!window.floating);
 }
@@ -283,6 +302,7 @@ pub fn toggleFloating(window: *Window) void {
 pub fn setFloating(window: *Window, on: bool) void {
     if (window.floating == on) return;
     window.floating = on;
+    wm.ipc_dirty = true;
 
     const ws = window.workspace orelse return;
 
@@ -344,7 +364,7 @@ pub fn sized(window: *const Window) bool {
     return window.width > 0 and window.height > 0;
 }
 
-fn syncSize(window: *Window) void {
+pub fn syncSize(window: *Window) void {
     if (window.slot.width == 0 or !window.sized()) return;
 
     const short_w = @max(0, window.slot.width - window.width);
@@ -465,6 +485,7 @@ pub fn manage(window: *Window) void {
         .exit => window.fullscreen = null,
     }
     window.fullscreen_request = .none;
+    wm.ipc_dirty = true;
 
     window.syncFullscreen();
     window.syncResizing();
@@ -473,7 +494,6 @@ pub fn manage(window: *Window) void {
 
     if (window.fullscreen != null) return;
 
-    window.syncSize();
     window.syncPosition();
 }
 
@@ -536,6 +556,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
             if (string.replace(wm.gpa, &window.app_id, args.app_id) catch
                 fatal("Out of memory.", .{}))
             {
+                wm.ipc_dirty = true;
                 log.debug("app_id {s} = {?s}", .{ window.identifier(), window.app_id });
             }
         },
@@ -544,6 +565,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
             if (string.replace(wm.gpa, &window.title, args.title) catch
                 fatal("Out of memory.", .{}))
             {
+                wm.ipc_dirty = true;
                 log.debug("title {s} = {?s}", .{ window.identifier(), window.title });
             }
         },

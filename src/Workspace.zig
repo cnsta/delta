@@ -60,6 +60,7 @@ pub fn forNewWindow() *Workspace {
 pub fn maybeDestroy(ws: *Workspace) void {
     if (ws.output != null) return;
     if (!ws.isEmpty()) return;
+    wm.ipc_dirty = true;
 
     std.debug.assert(ws.layout.isEmpty());
 
@@ -77,6 +78,7 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
     ws.windows.init();
 
     before.prev.?.insert(&ws.link);
+    wm.ipc_dirty = true;
     return ws;
 }
 

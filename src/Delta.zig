@@ -30,6 +30,7 @@ io: std.Io,
 obj: *river.WindowManagerV1,
 xkb_bindings: *river.XkbBindingsV1,
 layer_shell: ?*river.LayerShellV1,
+locked_applied: ?bool = null,
 
 outputs: wl.list.Head(Output, .link),
 windows: wl.list.Head(Window, .link),
@@ -43,8 +44,11 @@ config_path: ?[]const u8 = null,
 notify_socket: ?[]const u8 = null,
 
 server: ?Server = null,
+ipc_arena: std.heap.ArenaAllocator,
+ipc_buf: std.ArrayList(u8) = .empty,
 ipc_path: ?[]const u8 = null,
 ipc_last: std.ArrayList(u8) = .empty,
+ipc_dirty: bool = false,
 registry: *wl.Registry,
 
 default_output: ?*Output = null,
@@ -86,6 +90,7 @@ pub fn init(
 
         .notify_socket = notify_socket,
         .ipc_path = ipc_path,
+        .ipc_arena = .init(gpa),
 
         .registry = registry,
         .obj = wm_obj,
@@ -154,6 +159,10 @@ fn manageStart(delta: *Delta) void {
         }
     }
     {
+        var it = list.safeIterator(Window, .link, &delta.windows);
+        while (it.next()) |window| window.syncSize();
+    }
+    {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.applyWarp();
     }
@@ -162,6 +171,7 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |workspace| workspace.maybeDestroy();
     }
 
+    delta.locked_applied = delta.locked;
     delta.syncLayerShellDefault();
     delta.publish();
     delta.obj.manageFinish();
@@ -248,37 +258,42 @@ pub fn deinit(delta: *Delta) void {
 
     delta.config_arena.deinit();
     if (delta.server) |*server| server.deinit();
+
+    delta.ipc_arena.deinit();
+    delta.ipc_buf.deinit(delta.gpa);
     delta.ipc_last.deinit(delta.gpa);
 }
 
 fn publish(delta: *Delta) void {
+    if (!delta.ipc_dirty) return;
+    delta.ipc_dirty = false;
+
     const server = if (delta.server) |*s| s else return;
     if (!server.hasStreamingClients()) return;
 
-    var arena = std.heap.ArenaAllocator.init(delta.gpa);
-    defer arena.deinit();
+    _ = delta.ipc_arena.reset(.retain_capacity);
+    const arena = delta.ipc_arena.allocator();
 
-    const state = snapshot.build(arena.allocator()) catch return;
+    const state = snapshot.build(arena) catch return;
 
-    var buf: std.ArrayList(u8) = .empty;
-    defer buf.deinit(delta.gpa);
+    delta.ipc_buf.clearRetainingCapacity();
 
     inline for (.{
         protocol.Event{ .outputs_changed = state.outputs },
         protocol.Event{ .workspaces_changed = state.workspaces },
         protocol.Event{ .windows_changed = state.windows },
     }) |event| {
-        const line = std.json.Stringify.valueAlloc(arena.allocator(), event, .{}) catch return;
-        buf.appendSlice(delta.gpa, line) catch return;
-        buf.append(delta.gpa, '\n') catch return;
+        const line = std.json.Stringify.valueAlloc(arena, event, .{}) catch return;
+        delta.ipc_buf.appendSlice(delta.gpa, line) catch return;
+        delta.ipc_buf.append(delta.gpa, '\n') catch return;
     }
 
-    if (std.mem.eql(u8, buf.items, delta.ipc_last.items)) return;
+    if (std.mem.eql(u8, delta.ipc_buf.items, delta.ipc_last.items)) return;
 
-    server.publishRaw(buf.items);
+    server.publishRaw(delta.ipc_buf.items);
 
     delta.ipc_last.clearRetainingCapacity();
-    delta.ipc_last.appendSlice(delta.gpa, buf.items) catch {
+    delta.ipc_last.appendSlice(delta.gpa, delta.ipc_buf.items) catch {
         delta.ipc_last.clearRetainingCapacity();
     };
 }
