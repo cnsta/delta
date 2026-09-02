@@ -160,7 +160,10 @@ fn manageStart(delta: *Delta) void {
     }
     {
         var it = list.safeIterator(Window, .link, &delta.windows);
-        while (it.next()) |window| window.syncSize();
+        while (it.next()) |window| {
+            window.syncSize();
+            window.syncVisibility();
+        }
     }
     {
         var it = list.safeIterator(Seat, .link, &delta.seats);

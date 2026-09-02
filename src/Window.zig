@@ -191,7 +191,6 @@ pub fn applyFloating(window: *Window, area: geom.Rect) void {
             window.propose(geom.Size.zero);
             return;
         }
-
         window.float_box = window.initialFloatBox(area);
     }
 
@@ -353,7 +352,7 @@ fn syncResizing(window: *Window) void {
 }
 
 pub fn syncVisibility(window: *Window) void {
-    const want_hidden = !window.visible();
+    const want_hidden = !window.visible() or window.slot.width == 0;
     if (want_hidden == window.hidden) return;
 
     if (want_hidden) window.obj.hide() else window.obj.show();
