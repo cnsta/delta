@@ -36,6 +36,7 @@ sync_local_zon() {
 
 do_update=false
 do_build=false
+do_sync=false
 only=()
 
 for arg in "$@"; do
