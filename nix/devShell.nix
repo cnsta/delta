@@ -19,6 +19,8 @@
   vulkan-headers,
   vulkan-loader,
   scdoc,
+  complgen,
+  bash-completion,
 }: let
   runtimeLibs = [
     wayland
@@ -42,6 +44,8 @@ in
       wayland-protocols
       alejandra
       scdoc
+      complgen
+      bash-completion
     ];
 
     buildInputs =

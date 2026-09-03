@@ -49,6 +49,13 @@ stdenv.mkDerivation (finalAttrs: {
 
   zigCheckFlags = finalAttrs.zigBuildFlags;
 
+  postInstall = ''
+    installShellCompletion --cmd delctl \
+      --bash contrib/completion/delctl.bash \
+      --fish contrib/completion/delctl.fish \
+      --zsh contrib/completion/delctl.zsh
+  '';
+
   meta = {
     homepage = "https://git.cnst.dev/cnst/delta";
     description = "A window manager for river";
