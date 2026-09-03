@@ -55,7 +55,7 @@ stdenv.mkDerivation (finalAttrs: {
   postInstall = ''
     installShellCompletion --cmd delctl \
       --bash contrib/completion/delctl.bash \
-      --fish ccontrib/completion/delctl.fish \
+      --fish contrib/completion/delctl.fish \
       --zsh contrib/completion/delctl.zsh
   '';
 
