@@ -7,6 +7,7 @@
   wayland-protocols,
   wayland-scanner,
   pkg-config,
+  installShellFiles,
   linuxHeaders,
   callPackage,
 }:
@@ -21,6 +22,7 @@ stdenv.mkDerivation (finalAttrs: {
       ../../../build.zig.zon
       ../../../src
       ../../../protocol
+      ../../../contrib
     ];
   };
 
@@ -31,6 +33,7 @@ stdenv.mkDerivation (finalAttrs: {
     pkg-config
     wayland-scanner
     wayland-protocols
+    installShellFiles
   ];
 
   buildInputs = [
@@ -52,7 +55,7 @@ stdenv.mkDerivation (finalAttrs: {
   postInstall = ''
     installShellCompletion --cmd delctl \
       --bash contrib/completion/delctl.bash \
-      --fish contrib/completion/delctl.fish \
+      --fish ccontrib/completion/delctl.fish \
       --zsh contrib/completion/delctl.zsh
   '';
 
