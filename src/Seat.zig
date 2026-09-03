@@ -283,8 +283,9 @@ fn dropMove(seat: *Seat, window: *Window) void {
         .x = seat.pointer.x - origin.x,
         .y = seat.pointer.y - origin.y,
     };
-    const other = ws.layout.windowAt(point) orelse return;
-    ws.layout.swap(window, other);
+
+    const hit = ws.layout.tileAt(point) orelse return;
+    ws.layout.dropOnto(window, hit.window, hit.rect, point);
 }
 
 pub fn tick(seat: *Seat, now: i64) void {

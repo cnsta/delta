@@ -10,6 +10,7 @@ const Window = @import("../Window.zig");
 const Eddy = @This();
 
 root: ?Node = null,
+area: geom.Rect = geom.Rect.zero,
 
 pub const Split = enum { vertical, horizontal };
 
@@ -30,6 +31,7 @@ pub const Branch = struct {
 const ratio_min = 0.05;
 const ratio_max = 0.95;
 const min_pane = 64;
+const edge_fraction: f32 = 0.25;
 
 // -- queries -------------------------------------------------------------
 
@@ -50,6 +52,30 @@ pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
     }
 }
 
+pub fn tileAt(layout: *Eddy, point: geom.Point) ?struct {
+    window: *Window,
+    rect: geom.Rect,
+} {
+    var node = layout.root orelse return null;
+    var rect = layout.area;
+
+    while (true) {
+        switch (node) {
+            .window => |w| return .{ .window = w, .rect = rect },
+            .branch => |b| {
+                const halves = subdivide(b.rect, b.split, b.ratio);
+                if (halves[0].contains(point)) {
+                    node = b.children[0];
+                    rect = halves[0];
+                } else {
+                    node = b.children[1];
+                    rect = halves[1];
+                }
+            },
+        }
+    }
+}
+
 // -- tree mutation -------------------------------------------------------
 
 pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Point) void {
@@ -63,31 +89,37 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
     const target = near orelse firstWindow(root);
     if (target == window) return;
 
-    const parent = target.branch;
-    const index = if (parent) |p| indexOf(p, .{ .window = target }) else 0;
+    const box = if (target.slot.width > 0) target.slot else layout.area;
+    const split = splitFor(box);
 
-    const bias = wm.config.layout.split_bias;
-    const box = target.slot;
-    const split: Split = if (@as(f32, @floatFromInt(box.width)) >
-        @as(f32, @floatFromInt(box.height)) * bias)
-        .vertical
-    else
-        .horizontal;
-
-    var first: Node = .{ .window = target };
-    var second: Node = .{ .window = window };
-
+    var before = false;
     if (cursor) |c| {
         const middle = box.center();
-        const before = switch (split) {
+        before = switch (split) {
             .vertical => c.x < middle.x,
             .horizontal => c.y < middle.y,
         };
-        if (before) {
-            first = .{ .window = window };
-            second = .{ .window = target };
-        }
     }
+
+    layout.splitOnto(window, target, split, before);
+}
+
+fn splitFor(box: geom.Rect) Split {
+    if (box.width == 0 or box.height == 0) return .vertical;
+
+    const bias = wm.config.layout.split_bias;
+    const wide = @as(f32, @floatFromInt(box.width)) >
+        @as(f32, @floatFromInt(box.height)) * bias;
+
+    return if (wide) .vertical else .horizontal;
+}
+
+fn splitOnto(layout: *Eddy, window: *Window, target: *Window, split: Split, before: bool) void {
+    const parent = target.branch;
+    const index = if (parent) |p| indexOf(p, .{ .window = target }) else 0;
+
+    const first: Node = if (before) .{ .window = window } else .{ .window = target };
+    const second: Node = if (before) .{ .window = target } else .{ .window = window };
 
     const branch = wm.gpa.create(Branch) catch std.process.fatal("Out of memory.", .{});
     branch.* = .{
@@ -155,9 +187,45 @@ pub fn swap(layout: *Eddy, a: *Window, b: *Window) void {
     b.branch = pa;
 }
 
+pub fn dropOnto(
+    layout: *Eddy,
+    window: *Window,
+    target: *Window,
+    tile: geom.Rect,
+    point: geom.Point,
+) void {
+    if (window == target) return;
+    if (tile.width == 0 or tile.height == 0) return;
+
+    const zone = dropZone(tile, point) orelse {
+        layout.swap(window, target);
+        return;
+    };
+
+    layout.remove(window);
+    layout.splitOnto(window, target, zone.split, zone.before);
+}
+
+fn dropZone(tile: geom.Rect, point: geom.Point) ?struct { split: Split, before: bool } {
+    const x = point.x - tile.x;
+    const y = point.y - tile.y;
+
+    const margin_x = scale(tile.width, edge_fraction);
+    const margin_y = scale(tile.height, edge_fraction);
+
+    if (x < margin_x) return .{ .split = .vertical, .before = true };
+    if (x >= tile.width - margin_x) return .{ .split = .vertical, .before = false };
+    if (y < margin_y) return .{ .split = .horizontal, .before = true };
+    if (y >= tile.height - margin_y) return .{ .split = .horizontal, .before = false };
+
+    return null;
+}
+
 // -- arrangement ---------------------------------------------------------
 
 pub fn arrange(layout: *Eddy, area: geom.Rect) void {
+    layout.area = area;
+
     const root = layout.root orelse return;
     place(root, area, area);
 }
@@ -337,4 +405,69 @@ test "subdivide halves never both contain the shared edge" {
     const edge: geom.Point = .{ .x = halves[1].x, .y = 50 };
     try std.testing.expect(!halves[0].contains(edge));
     try std.testing.expect(halves[1].contains(edge));
+}
+
+test "an insert into an unarranged layout splits vertically" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a: Window = undefined;
+    var b: Window = undefined;
+
+    a.branch = null;
+    a.slot = geom.Rect.zero;
+    b.branch = null;
+    b.slot = geom.Rect.zero;
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+
+    defer wm.gpa.destroy(layout.root.?.branch);
+
+    try std.testing.expectEqual(Split.vertical, layout.root.?.branch.split);
+}
+
+test "dropping on an edge changes the split, dropping in the middle swaps" {
+    rules.useDefaultConfig();
+
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 1000, .height = 500 };
+
+    var layout: Eddy = .{};
+    var a: Window = undefined;
+    var b: Window = undefined;
+
+    a.branch = null;
+    a.slot = geom.Rect.zero;
+    b.branch = null;
+    b.slot = geom.Rect.zero;
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    layout.area = area;
+
+    try std.testing.expectEqual(Split.vertical, layout.root.?.branch.split);
+
+    const tile: geom.Rect = .{ .x = 500, .y = 0, .width = 500, .height = 500 };
+    layout.dropOnto(&a, &b, tile, .{ .x = 750, .y = 10 });
+
+    try std.testing.expectEqual(Split.horizontal, layout.root.?.branch.split);
+
+    try std.testing.expectEqual(&a, layout.root.?.branch.children[0].window);
+
+    defer wm.gpa.destroy(layout.root.?.branch);
+}
+
+test "dropZone treats the middle as neutral" {
+    const tile: geom.Rect = .{ .x = 100, .y = 100, .width = 400, .height = 400 };
+
+    try std.testing.expect(dropZone(tile, .{ .x = 300, .y = 300 }) == null);
+
+    try std.testing.expectEqual(Split.vertical, dropZone(tile, .{ .x = 110, .y = 300 }).?.split);
+    try std.testing.expect(dropZone(tile, .{ .x = 110, .y = 300 }).?.before);
+
+    try std.testing.expectEqual(Split.vertical, dropZone(tile, .{ .x = 490, .y = 300 }).?.split);
+    try std.testing.expect(!dropZone(tile, .{ .x = 490, .y = 300 }).?.before);
+
+    try std.testing.expectEqual(Split.horizontal, dropZone(tile, .{ .x = 300, .y = 110 }).?.split);
+    try std.testing.expect(dropZone(tile, .{ .x = 300, .y = 490 }).?.split == .horizontal);
 }

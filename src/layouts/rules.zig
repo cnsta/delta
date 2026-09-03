@@ -137,7 +137,7 @@ fn sticks(a: i32, b: i32) bool {
     return @abs(a - b) <= 1;
 }
 
-fn useDefaultConfig() void {
+pub fn useDefaultConfig() void {
     wm.config = .{};
 }
 
