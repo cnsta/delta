@@ -62,6 +62,7 @@ pub const Op = union(enum) {
         window: *Window,
         applied_dx: i32 = 0,
         applied_dy: i32 = 0,
+        dragging: bool = false,
     },
     resize: struct {
         window: *Window,
@@ -202,19 +203,27 @@ pub fn manage(seat: *Seat) void {
     if (seat.op_release) {
         switch (seat.op) {
             .none => {},
-            .move => |args| if (!args.window.floating) seat.dropMove(args.window),
+            .move => |args| if (!args.window.floating and args.dragging) seat.dropMove(args.window),
             .resize => {},
         }
         seat.endOp();
     } else switch (seat.op) {
         .none => {},
-        .move => |*args| if (args.window.floating) {
-            args.window.moveFloating(
-                seat.op_dx - args.applied_dx,
-                seat.op_dy - args.applied_dy,
-            );
-            args.applied_dx = seat.op_dx;
-            args.applied_dy = seat.op_dy;
+        .move => |*args| {
+            if (!args.dragging) {
+                const t = wm.config.input.drag_threshold;
+                if (seat.op_dx * seat.op_dx + seat.op_dy * seat.op_dy < t * t) return;
+                args.dragging = true;
+            }
+
+            if (args.window.floating) {
+                args.window.moveFloating(
+                    seat.op_dx - args.applied_dx,
+                    seat.op_dy - args.applied_dy,
+                );
+                args.applied_dx = seat.op_dx;
+                args.applied_dy = seat.op_dy;
+            }
         },
 
         .resize => |*args| {

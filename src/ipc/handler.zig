@@ -77,6 +77,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
             streaming.* = true;
 
             wm.ipc_last.clearRetainingCapacity();
+            wm.ipc_dirty = true;
             wm.dirty = true;
 
             return try stringify(arena, protocol.Reply.ok);

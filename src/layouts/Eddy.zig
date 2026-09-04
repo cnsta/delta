@@ -31,7 +31,7 @@ pub const Branch = struct {
 const ratio_min = 0.05;
 const ratio_max = 0.95;
 const min_pane = 64;
-const edge_fraction: f32 = 0.25;
+const edge_fraction: f32 = 0.3;
 
 // -- queries -------------------------------------------------------------
 
@@ -206,20 +206,38 @@ pub fn dropOnto(
     layout.splitOnto(window, target, zone.split, zone.before);
 }
 
-fn dropZone(tile: geom.Rect, point: geom.Point) ?struct { split: Split, before: bool } {
-    const x = point.x - tile.x;
-    const y = point.y - tile.y;
+fn dropZone(tile: geom.Rect, point: geom.Point) ?Zone {
+    const top = point.y - tile.y;
+    const left = point.x - tile.x;
+    const right = tile.x + tile.width - point.x;
+    const bottom = tile.y + tile.height - point.y;
 
-    const margin_x = scale(tile.width, edge_fraction);
-    const margin_y = scale(tile.height, edge_fraction);
+    var closest = top;
+    var zone: Zone = .{ .split = .horizontal, .before = true };
 
-    if (x < margin_x) return .{ .split = .vertical, .before = true };
-    if (x >= tile.width - margin_x) return .{ .split = .vertical, .before = false };
-    if (y < margin_y) return .{ .split = .horizontal, .before = true };
-    if (y >= tile.height - margin_y) return .{ .split = .horizontal, .before = false };
+    if (left < closest) {
+        closest = left;
+        zone = .{ .split = .vertical, .before = true };
+    }
+    if (right < closest) {
+        closest = right;
+        zone = .{ .split = .vertical, .before = false };
+    }
+    if (bottom < closest) {
+        closest = bottom;
+        zone = .{ .split = .horizontal, .before = false };
+    }
 
-    return null;
+    const thickness = scale(@min(tile.width, tile.height), edge_fraction);
+    if (closest > thickness) return null;
+
+    return zone;
 }
+
+pub const Zone = struct {
+    split: Split,
+    before: bool,
+};
 
 // -- arrangement ---------------------------------------------------------
 

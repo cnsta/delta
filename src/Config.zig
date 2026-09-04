@@ -39,6 +39,7 @@ pub const Input = struct {
     follow_sent_windows: bool = false,
 
     cursor: Cursor = .{},
+    drag_threshold: i32 = 10,
 };
 
 pub const Cursor = struct {
