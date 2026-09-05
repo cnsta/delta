@@ -176,8 +176,7 @@ pub fn repeatDeadline(seat: *const Seat) ?i64 {
 // -- the manage sequence -----------------------------------------------
 
 pub fn manage(seat: *Seat) void {
-    if (wm.locked_applied != wm.locked) seat.syncBindings(!wm.locked);
-
+    seat.syncBindings(!wm.locked);
     seat.updateOutput();
 
     if (wm.locked) {
