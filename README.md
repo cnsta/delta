@@ -13,11 +13,11 @@ Written in Zig. Two dependencies: `zig-wayland` and `zig-xkbcommon`.
 Usable, and daily-driven by its author. Not stable. Expect the config format to
 change.
 
-**Works:** dwindle-style tiling, workspaces, floating windows, fullscreen,
-keyboard and pointer resize, directional focus, key repeat, pointer warping,
-layer shell (bars, launchers, lock screens), window rules, live config reload.
+**Works:** bsp-ish tiling, workspaces, floating windows, fullscreen, keyboard
+and pointer resize, directional focus, key repeat, pointer warping, layer shell
+(bars, launchers, lock screens), window rules, live config reload, an IPC.
 
-**Missing:** IPC, animations, multi-seat beyond the obvious cases, rules that
+**Missing:** Animations, multi-seat beyond the obvious cases, rules that
 re-evaluate when a window renames itself.
 
 ## Building
@@ -55,7 +55,7 @@ The module sets up a systemd user session, an XDG portal, and optionally kanshi.
 `programs.river-delta.sessionScript` is the entry point to hand to greetd
 directly, rather than scraping `Exec=` out of a desktop entry.
 
-The config file is not generated. Write `~/.config/delta/config.zon` by hand;
+The config file is not generated. Write `~/.config/delta/config.zon` by hand,
 delta reloads it when you save.
 
 ## Configuration
