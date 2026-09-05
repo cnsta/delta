@@ -164,6 +164,17 @@ pub fn remove(layout: *Eddy, window: *Window) void {
     window.branch = null;
 }
 
+pub fn toggleSplit(window: *Window) bool {
+    const branch = window.branch orelse return false;
+
+    branch.split = switch (branch.split) {
+        .vertical => .horizontal,
+        .horizontal => .vertical,
+    };
+
+    return true;
+}
+
 pub fn swap(layout: *Eddy, a: *Window, b: *Window) void {
     if (a == b) return;
 
@@ -206,7 +217,7 @@ pub fn dropOnto(
     layout.splitOnto(window, target, zone.split, zone.before);
 }
 
-fn dropZone(tile: geom.Rect, point: geom.Point) ?Zone {
+pub fn dropZone(tile: geom.Rect, point: geom.Point) ?Zone {
     const top = point.y - tile.y;
     const left = point.x - tile.x;
     const right = tile.x + tile.width - point.x;
@@ -488,4 +499,42 @@ test "dropZone treats the middle as neutral" {
 
     try std.testing.expectEqual(Split.horizontal, dropZone(tile, .{ .x = 300, .y = 110 }).?.split);
     try std.testing.expect(dropZone(tile, .{ .x = 300, .y = 490 }).?.split == .horizontal);
+}
+
+test "toggleSplit flips the branch holding the window" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a: Window = undefined;
+    var b: Window = undefined;
+
+    a.branch = null;
+    a.slot = geom.Rect.zero;
+    b.branch = null;
+    b.slot = geom.Rect.zero;
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    defer wm.gpa.destroy(layout.root.?.branch);
+
+    const before = layout.root.?.branch.split;
+
+    try std.testing.expect(toggleSplit(&b));
+    try std.testing.expect(layout.root.?.branch.split != before);
+
+    try std.testing.expect(toggleSplit(&b));
+    try std.testing.expectEqual(before, layout.root.?.branch.split);
+}
+
+test "toggleSplit on a lone window does nothing" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a: Window = undefined;
+    a.branch = null;
+    a.slot = geom.Rect.zero;
+
+    layout.insert(&a, null, null);
+
+    try std.testing.expect(!toggleSplit(&a));
 }

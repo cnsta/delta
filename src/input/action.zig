@@ -13,12 +13,14 @@ pub const Action = union(enum) {
     close,
     focus_next,
     focus_direction: geom.Direction,
+    move_direction: geom.Direction,
     focus_workspace: Workspace.Id,
     send_to_workspace: Workspace.Id,
     pointer_move,
     pointer_resize,
     resize: Resize,
     toggle_fullscreen,
+    toggle_split,
     toggle_floating,
     exit,
 
@@ -43,13 +45,15 @@ pub const Action = union(enum) {
             .resize => |how| seat.resizeStep(how),
             .toggle_fullscreen => seat.toggleFullscreen(),
             .toggle_floating => seat.toggleFloating(),
+            .move_direction => |dir| seat.moveDirection(dir),
+            .toggle_split => seat.toggleSplit(),
             .exit => wm.obj.exitSession(),
         }
     }
 
     pub fn repeats(action: Action) bool {
         return switch (action) {
-            .resize, .focus_direction, .focus_next => true,
+            .resize, .focus_direction, .focus_next, .move_direction => true,
 
             .none,
             .spawn,
@@ -60,6 +64,7 @@ pub const Action = union(enum) {
             .pointer_resize,
             .toggle_fullscreen,
             .toggle_floating,
+            .toggle_split,
             .exit,
             => false,
         };

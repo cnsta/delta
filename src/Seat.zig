@@ -56,21 +56,6 @@ output: ?*Output = null,
 
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
-pub const Op = union(enum) {
-    none,
-    move: struct {
-        window: *Window,
-        applied_dx: i32 = 0,
-        applied_dy: i32 = 0,
-        dragging: bool = false,
-    },
-    resize: struct {
-        window: *Window,
-        applied_dx: i32 = 0,
-        applied_dy: i32 = 0,
-    },
-};
-
 // -- lifecycle ---------------------------------------------------------
 
 pub fn create(river_seat: *river.SeatV1) void {
@@ -200,28 +185,24 @@ pub fn manage(seat: *Seat) void {
     while (seat.pending.pop()) |action| action.execute(seat);
 
     if (seat.op_release) {
-        switch (seat.op) {
-            .none => {},
-            .move => |args| if (!args.window.floating and args.dragging) seat.dropMove(args.window),
-            .resize => {},
-        }
         seat.endOp();
     } else switch (seat.op) {
         .none => {},
-        .move => |*args| {
-            if (!args.dragging) {
+        .move => |*m| {
+            if (!m.dragging) {
                 const t = wm.config.input.drag_threshold;
-                if (seat.op_dx * seat.op_dx + seat.op_dy * seat.op_dy < t * t) return;
-                args.dragging = true;
+                if (seat.op_dx * seat.op_dx + seat.op_dy * seat.op_dy >= t * t) m.dragging = true;
             }
 
-            if (args.window.floating) {
-                args.window.moveFloating(
-                    seat.op_dx - args.applied_dx,
-                    seat.op_dy - args.applied_dy,
+            if (!m.dragging) {} else if (m.window.floating) {
+                m.window.moveFloating(
+                    seat.op_dx - m.applied_dx,
+                    seat.op_dy - m.applied_dy,
                 );
-                args.applied_dx = seat.op_dx;
-                args.applied_dy = seat.op_dy;
+                m.applied_dx = seat.op_dx;
+                m.applied_dy = seat.op_dy;
+            } else {
+                seat.dragTiled(m);
             }
         },
 
@@ -229,7 +210,6 @@ pub fn manage(seat: *Seat) void {
             const dx = seat.op_dx - args.applied_dx;
             const dy = seat.op_dy - args.applied_dy;
 
-            // A floating window resizes itself; a tiled one moves a divider.
             if (args.window.floating) {
                 args.window.resizeFloating(dx, dy);
             } else {
@@ -282,9 +262,30 @@ fn endOp(seat: *Seat) void {
     seat.op = .none;
 }
 
-fn dropMove(seat: *Seat, window: *Window) void {
+pub const Op = union(enum) {
+    none,
+    move: Move,
+    resize: struct {
+        window: *Window,
+        applied_dx: i32 = 0,
+        applied_dy: i32 = 0,
+    },
+
+    pub const Move = struct {
+        window: *Window,
+        applied_dx: i32 = 0,
+        applied_dy: i32 = 0,
+
+        dragging: bool = false,
+
+        last_target: ?*Window = null,
+    };
+};
+
+fn dragTiled(seat: *Seat, m: *Op.Move) void {
     if (!seat.pointer_known) return;
-    const ws = window.workspace orelse return;
+
+    const ws = m.window.workspace orelse return;
     const origin = ws.origin() orelse return;
 
     const point: geom.Point = .{
@@ -292,8 +293,21 @@ fn dropMove(seat: *Seat, window: *Window) void {
         .y = seat.pointer.y - origin.y,
     };
 
-    const hit = ws.layout.tileAt(point) orelse return;
-    ws.layout.dropOnto(window, hit.window, hit.rect, point);
+    const target = ws.layout.windowAt(point) orelse return;
+
+    if (target == m.window) return;
+
+    if (m.last_target == target) return;
+
+    m.last_target = target;
+    ws.layout.swap(m.window, target);
+}
+
+fn sameZone(a: ?Eddy.Zone, b: ?Eddy.Zone) bool {
+    if (a == null and b == null) return true;
+    const x = a orelse return false;
+    const y = b orelse return false;
+    return x.split == y.split and x.before == y.before;
 }
 
 pub fn tick(seat: *Seat, now: i64) void {
@@ -372,6 +386,31 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
     if (ws.windowInDirection(window, dir)) |target| {
         if (seat.focus(target)) seat.warpTo(target);
     }
+}
+
+pub fn moveDirection(seat: *Seat, dir: geom.Direction) void {
+    const window = seat.focused orelse return;
+    const ws = window.workspace orelse return;
+
+    const target = ws.windowInDirection(window, dir) orelse return;
+
+    ws.layout.swap(window, target);
+    wm.ipc_dirty = true;
+
+    seat.warpTo(window);
+}
+
+pub fn toggleSplit(seat: *Seat) void {
+    const window = seat.focused orelse return;
+
+    if (window.floating) return;
+    if (window.fullscreen != null) return;
+
+    const ws = window.workspace orelse return;
+    if (!Eddy.toggleSplit(window)) return;
+
+    _ = ws;
+    wm.dirty = true;
 }
 
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
@@ -596,7 +635,12 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
 
         XkbBinding.create(seat, super, key, .{ .focus_direction = dir });
         XkbBinding.create(seat, super, letter, .{ .focus_direction = dir });
+
+        XkbBinding.create(seat, super_shift, key, .{ .move_direction = dir });
+        XkbBinding.create(seat, super_shift, letter, .{ .move_direction = dir });
     }
+
+    XkbBinding.create(seat, super, .v, .toggle_split);
 
     const question: xkb.Keysym = @enumFromInt(0x03f);
     const minus: xkb.Keysym = @enumFromInt(0x02d);
