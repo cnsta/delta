@@ -8,6 +8,8 @@ const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
+const animation = @import("util/animation.zig");
+
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
@@ -18,6 +20,8 @@ id: Id,
 link: wl.list.Link,
 
 output: ?*Output = null,
+last_output: ?*Output = null,
+offset: animation.Lerp = .zero,
 
 windows: wl.list.Head(Window, .workspace_link),
 layout: Eddy = .{},
@@ -59,6 +63,7 @@ pub fn forNewWindow() *Workspace {
 
 pub fn maybeDestroy(ws: *Workspace) void {
     if (ws.output != null) return;
+    if (ws.animating()) return;
     if (!ws.isEmpty()) return;
     wm.ipc_dirty = true;
 
@@ -105,12 +110,31 @@ pub fn isEmpty(ws: *const Workspace) bool {
 }
 
 pub fn visible(ws: *const Workspace) bool {
-    return ws.output != null;
+    return ws.output != null or ws.animating();
+}
+
+pub fn animating(ws: *const Workspace) bool {
+    const duration = wm.config.animation.duration_ms;
+    return !ws.offset.done(wm.millis(), duration);
+}
+
+pub fn settle(ws: *Workspace) void {
+    const duration = wm.config.animation.duration_ms;
+    const now = wm.millis();
+
+    if (ws.offset.done(now, duration)) {
+        ws.offset.settle();
+        if (ws.output == null) ws.last_output = null;
+    }
 }
 
 pub fn origin(ws: *const Workspace) ?geom.Point {
-    const output = ws.output orelse return null;
-    return .{ .x = output.x, .y = output.y };
+    const output = ws.output orelse ws.last_output orelse return null;
+    const duration = wm.config.animation.duration_ms;
+    const now = wm.millis();
+    const off = ws.offset.at(now, duration, wm.config.animation.curve);
+
+    return .{ .x = output.x + off.x, .y = output.y + off.y };
 }
 
 /// TODO: multi-seat
