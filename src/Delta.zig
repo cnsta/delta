@@ -68,6 +68,7 @@ notified: bool = false,
 shutting_down: bool = false,
 
 dirty: bool = false,
+now: i64 = 0,
 
 pub const stop_timeout_ms = 1000;
 pub const reload_debounce_ms = 50;
@@ -115,6 +116,7 @@ pub fn init(
         .workspaces = undefined,
     };
 
+    instance.now = instance.sampleClock();
     instance.outputs.init();
     instance.windows.init();
     instance.seats.init();
@@ -430,6 +432,14 @@ pub fn tick(delta: *Delta) void {
     }
 }
 
-pub fn millis(delta: *const Delta) i64 {
+fn sampleClock(delta: *const Delta) i64 {
     return std.Io.Clock.now(.awake, delta.io).toMilliseconds();
+}
+
+pub fn tickClock(delta: *Delta) void {
+    delta.now = delta.sampleClock();
+}
+
+pub fn millis(delta: *const Delta) i64 {
+    return delta.now;
 }

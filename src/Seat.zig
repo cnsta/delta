@@ -326,6 +326,12 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
         break :blk ws.windows.last();
     };
 
+    if (target) |w| {
+        if (w.workspace) |ws| {
+            if (ws.output == null) return false;
+        }
+    }
+
     if (seat.focused == target) return false;
 
     if (seat.focused) |old| old.focus_count -= 1;
@@ -357,6 +363,7 @@ pub fn dropFocus(seat: *Seat) void {
     const old = seat.focused orelse return;
     old.focus_count -= 1;
     seat.focused = null;
+    seat.obj.clearFocus();
     wm.ipc_dirty = true;
 }
 
