@@ -66,7 +66,7 @@ pub fn main(init: std.process.Init) !void {
     const arena = arena_state.allocator();
 
     const fd = try connect(arena, init.environ_map);
-    defer _ = std.c.close(fd);
+    defer posix.close(fd);
 
     const line = try std.json.Stringify.valueAlloc(arena, request, .{});
     try write(fd, line);
@@ -110,7 +110,7 @@ fn connect(arena: std.mem.Allocator, environ: *const std.process.Environ.Map) !p
     const fd_rc = linux.socket(linux.AF.UNIX, linux.SOCK.STREAM | linux.SOCK.CLOEXEC, 0);
     if (syscall.failed(fd_rc)) return error.SocketFailed;
     const fd: posix.fd_t = @intCast(fd_rc);
-    errdefer _ = std.c.close(fd);
+    errdefer posix.close(fd);
 
     const addr_len: linux.socklen_t = @intCast(@sizeOf(linux.sa_family_t) + path.len + 1);
 
