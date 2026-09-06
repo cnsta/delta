@@ -55,7 +55,8 @@ pub const Fade = union(enum) {
             return;
         }
 
-        fade.* = .{ .moving = .{ .from = fade.current(now, duration), .to = target, .start = now } };
+        const cur_val = fade.current(now, duration);
+        fade.* = .{ .moving = .{ .from = cur_val, .to = target, .start = now } };
     }
 
     pub fn at(fade: Fade, now: i64, duration: i64, curve: Curve) f32 {

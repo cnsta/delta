@@ -33,6 +33,39 @@ const child_environment = [_][2][]const u8{
     .{ "_JAVA_AWT_WM_NONREPARENTING", "1" },
 };
 
+test {
+    _ = Config;
+    _ = Delta;
+    _ = Loop;
+    _ = @import("Output.zig");
+    _ = @import("Seat.zig");
+    _ = @import("Window.zig");
+    _ = @import("Workspace.zig");
+    _ = @import("Watcher.zig");
+    _ = @import("cli.zig");
+    _ = @import("delctl.zig");
+    _ = @import("log.zig");
+    _ = @import("notify.zig");
+    _ = @import("overlay.zig");
+    _ = @import("spawn.zig");
+    _ = @import("util/animation.zig");
+    _ = @import("util/color.zig");
+    _ = @import("util/geom.zig");
+    _ = @import("util/glob.zig");
+    _ = @import("util/list.zig");
+    _ = @import("util/string.zig");
+    _ = @import("util/syscall.zig");
+    _ = @import("layouts/Eddy.zig");
+    _ = @import("layouts/rules.zig");
+    _ = @import("ipc/Server.zig");
+    _ = @import("ipc/handler.zig");
+    _ = @import("ipc/protocol.zig");
+    _ = @import("ipc/snapshot.zig");
+    _ = @import("input/PointerBinding.zig");
+    _ = @import("input/XkbBinding.zig");
+    _ = @import("input/action.zig");
+}
+
 pub fn main(init: std.process.Init) !void {
     const args = try init.minimal.args.toSlice(init.gpa);
     defer init.gpa.free(args);

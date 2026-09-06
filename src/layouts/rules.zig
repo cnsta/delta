@@ -139,6 +139,7 @@ fn sticks(a: i32, b: i32) bool {
 
 pub fn useDefaultConfig() void {
     wm.config = .{};
+    wm.gpa = std.testing.allocator;
 }
 
 test "place gives equal gaps regardless of how the area was divided" {
