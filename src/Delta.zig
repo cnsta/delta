@@ -403,7 +403,7 @@ pub fn pollTimeout(delta: *Delta) i32 {
 
     const at = soonest orelse return -1;
 
-    return @intCast(@max(0, at - delta.millis()));
+    return @intCast(@max(0, at - delta.sampleClock()));
 }
 
 pub fn tick(delta: *Delta) void {
