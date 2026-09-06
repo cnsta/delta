@@ -72,6 +72,7 @@ pub fn maybeDestroy(ws: *Workspace) void {
     if (ws.output != null) return;
     if (ws.animating()) return;
     if (!ws.isEmpty()) return;
+
     wm.ipc_dirty = true;
 
     std.debug.assert(ws.layout.isEmpty());
@@ -120,20 +121,24 @@ pub fn visible(ws: *const Workspace) bool {
     return ws.output != null or ws.animating();
 }
 
-pub fn animating(ws: *const Workspace) bool {
-    if (!wm.config.animation.enabled) return false;
-    const duration = wm.config.animation.duration_ms;
-    return !ws.offset.done(wm.millis(), duration);
-}
-
 pub fn settle(ws: *Workspace) void {
     const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
     const now = wm.millis();
 
-    if (ws.offset.done(now, duration)) {
-        ws.offset.settle();
-        if (ws.output == null) ws.last_output = null;
+    if (!ws.offset.done(now, duration)) {
+        if (ws.offset == .moving) {
+            std.debug.assert(now - ws.offset.moving.start < duration * 4);
+        }
+        return;
     }
+
+    ws.offset.settle();
+    if (ws.output == null) ws.last_output = null;
+}
+
+pub fn animating(ws: *const Workspace) bool {
+    if (!wm.config.animation.enabled) return false;
+    return !ws.offset.done(wm.millis(), wm.config.animation.duration_ms);
 }
 
 pub fn origin(ws: *const Workspace) ?geom.Point {

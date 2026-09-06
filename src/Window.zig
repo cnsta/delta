@@ -213,7 +213,6 @@ pub fn syncPosition(window: *Window) void {
 }
 
 pub fn syncFade(window: *Window) void {
-    if (!wm.config.animation.enabled) return;
     const fade = if (window.fade) |*f| f else return;
 
     const duration = wm.config.animation.fade_ms;
@@ -226,6 +225,11 @@ pub fn syncFade(window: *Window) void {
         window.slot.size(),
         Overlay.Color.rgba(wm.config.animation.fade_color, alpha),
     );
+
+    if (window.fade_alpha.done(now, duration)) {
+        fade.destroy();
+        window.fade = null;
+    }
 }
 
 pub fn syncFadeState(window: *Window) void {
