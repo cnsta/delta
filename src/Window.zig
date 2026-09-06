@@ -10,6 +10,7 @@ const color = @import("util/color.zig");
 const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
 const string = @import("util/string.zig");
+const animation = @import("util/animation.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
 const rules = @import("layouts/rules.zig");
@@ -18,6 +19,7 @@ const Config = @import("Config.zig");
 const Output = @import("Output.zig");
 const Seat = @import("Seat.zig");
 const Workspace = @import("Workspace.zig");
+const Overlay = @import("overlay.zig");
 
 const log = std.log.scoped(.window);
 
@@ -45,6 +47,10 @@ branch: ?*Eddy.Branch = null,
 limits: rules.Limits = .{},
 
 placed: ?geom.Point = null,
+motion: animation.Lerp = .zero,
+bounds: geom.Size = geom.Size.zero,
+fade: ?Overlay = null,
+fade_alpha: animation.Fade = .{ .settled = 0 },
 proposed: geom.Size = geom.Size.zero,
 tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
@@ -105,6 +111,7 @@ pub fn create(river_window: *river.WindowV1) void {
     window.obj.setListener(*Window, listener, window);
     wm.windows.append(window);
     wm.ipc_dirty = true;
+    window.fade_alpha = .{ .settled = 1 };
 }
 
 pub fn fromObj(obj: *river.WindowV1) *Window {
@@ -114,6 +121,9 @@ pub fn fromObj(obj: *river.WindowV1) *Window {
 pub fn maybeDestroy(window: *Window) void {
     if (!window.closed) return;
     wm.ipc_dirty = true;
+
+    if (window.fade) |*fade| fade.destroy();
+    window.fade = null;
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetWindow(window);
@@ -160,23 +170,101 @@ pub fn setWorkspace(window: *Window, target: *Workspace) void {
     target.layout.insert(window, near, target.cursor());
 }
 
+pub fn placeAt(window: *Window, x: i32, y: i32) void {
+    window.x = x;
+    window.y = y;
+    window.motion = .{ .settled = .{ .x = x, .y = y } };
+}
+
 pub fn setPosition(window: *Window, x: i32, y: i32) void {
     window.x = x;
     window.y = y;
-    window.syncPosition();
+
+    window.motion.retarget(
+        .{ .x = x, .y = y },
+        wm.millis(),
+        wm.config.animation.duration_ms,
+        wm.config.animation.curve,
+    );
 }
 
 pub fn syncPosition(window: *Window) void {
     const ws = window.workspace orelse return;
     const origin = ws.origin() orelse return;
 
-    const at: geom.Point = .{ .x = origin.x + window.x, .y = origin.y + window.y };
+    const duration = wm.config.animation.duration_ms;
+    const now = wm.millis();
+
+    const local = window.motion.at(now, duration, wm.config.animation.curve);
+
+    if (window.motion.done(now, duration)) window.motion.settle();
+
+    const at: geom.Point = .{ .x = origin.x + local.x, .y = origin.y + local.y };
     if (window.placed) |last| {
         if (last.eql(at)) return;
     }
 
     window.node.setPosition(at.x, at.y);
     window.placed = at;
+}
+
+pub fn syncFade(window: *Window) void {
+    const fade = if (window.fade) |*f| f else return;
+    log.info("fade: alpha {d}", .{window.fade_alpha.at(wm.millis(), wm.config.animation.fade_ms, .linear)});
+
+    const duration = wm.config.animation.fade_ms;
+    const now = wm.millis();
+
+    const alpha = window.fade_alpha.at(now, duration, wm.config.animation.curve);
+
+    fade.update(
+        geom.Point.zero,
+        window.slot.size(),
+        Overlay.Color.rgba(wm.config.animation.fade_color, alpha),
+    );
+
+    if (window.fade_alpha.done(now, duration)) {
+        fade.destroy();
+        window.fade = null;
+    }
+}
+
+pub fn fading(window: *const Window) bool {
+    if (window.fade == null) return false;
+    if (!window.visible()) return false;
+    return !window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms);
+}
+
+fn beginFade(window: *Window) void {
+    const duration = wm.config.animation.fade_ms;
+    if (duration <= 0) return;
+    if (window.slot.width <= 0 or window.slot.height <= 0) return;
+
+    window.fade = Overlay.create(window) orelse return;
+
+    window.fade_alpha = .{ .moving = .{
+        .from = 1,
+        .to = 0,
+        .start = wm.millis(),
+    } };
+}
+
+pub fn animating(window: *const Window) bool {
+    if (!window.visible()) return false;
+
+    return !window.motion.done(wm.millis(), wm.config.animation.duration_ms);
+}
+
+fn syncBounds(window: *Window) void {
+    const wanted: geom.Size = if (window.fullscreen != null or window.slot.width == 0)
+        geom.Size.zero
+    else
+        window.slot.size();
+
+    if (wanted.eql(window.bounds)) return;
+
+    window.obj.setDimensionBounds(wanted.width, wanted.height);
+    window.bounds = wanted;
 }
 
 pub fn applyPlacement(window: *Window, p: rules.Placement) void {
@@ -224,20 +312,42 @@ fn apply(window: *Window, p: rules.Placement) void {
         window.obj.setContentClipBox(0, 0, p.content.width, p.content.height);
     }
 
-    window.slot = p.content;
-    window.placeInSlot();
-}
+    const size_changed = !p.content.size().eql(window.slot.size());
+    const origin_moved = p.content.x != window.slot.x or p.content.y != window.slot.y;
 
-fn placeInSlot(window: *Window) void {
-    if (!window.sized()) {
-        window.setPosition(window.slot.x, window.slot.y);
-        return;
+    window.slot = p.content;
+
+    if (size_changed or origin_moved) {
+        log.info("apply {s}: {d}x{d}@{d},{d} -> {d}x{d}@{d},{d} size={} origin={}", .{
+            window.identifier(),
+            window.slot.width,
+            window.slot.height,
+            window.slot.x,
+            window.slot.y,
+            p.content.width,
+            p.content.height,
+            p.content.x,
+            p.content.y,
+            size_changed,
+            origin_moved,
+        });
     }
 
-    window.setPosition(
-        window.slot.x + @max(0, @divTrunc(window.slot.width - window.width, 2)),
-        window.slot.y + @max(0, @divTrunc(window.slot.height - window.height, 2)),
-    );
+    if (window.placed == null) {
+        window.placeInSlot(.immediate);
+        window.beginFade();
+    } else {
+        window.placeInSlot(.animated);
+    }
+}
+
+const Placement = enum { immediate, animated };
+
+fn placeInSlot(window: *Window, how: Placement) void {
+    switch (how) {
+        .immediate => window.placeAt(window.slot.x, window.slot.y),
+        .animated => window.setPosition(window.slot.x, window.slot.y),
+    }
 }
 
 fn propose(window: *Window, size: geom.Size) void {
@@ -481,11 +591,12 @@ pub fn manage(window: *Window) void {
     switch (window.fullscreen_request) {
         .none => {},
         .enter => |hint| window.fullscreen = hint orelse window.currentOutput(),
-        .exit => window.fullscreen = null,
+        .exit => {
+            window.fullscreen = null;
+            wm.ipc_dirty = true;
+        },
     }
     window.fullscreen_request = .none;
-    wm.ipc_dirty = true;
-
     window.syncFullscreen();
     window.syncResizing();
     window.syncDecoration();
@@ -493,7 +604,7 @@ pub fn manage(window: *Window) void {
 
     if (window.fullscreen != null) return;
 
-    window.syncPosition();
+    window.syncBounds();
 }
 
 fn syncNewFocus(window: *Window, applied: Config.Resolved) void {

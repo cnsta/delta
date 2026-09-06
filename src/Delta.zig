@@ -3,9 +3,11 @@ const wayland = @import("wayland");
 
 const river = wayland.client.river;
 const wl = wayland.client.wl;
+const wp = wayland.client.wp;
 
 const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
+const geom = @import("util/geom.zig");
 const spawn = @import("spawn.zig").spawn;
 const notify = @import("notify.zig");
 const snapshot = @import("ipc/snapshot.zig");
@@ -17,6 +19,7 @@ const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
 const Config = @import("Config.zig");
 const Server = @import("ipc/Server.zig");
+const Overlay = @import("overlay.zig");
 
 const Delta = @This();
 
@@ -30,6 +33,9 @@ io: std.Io,
 obj: *river.WindowManagerV1,
 xkb_bindings: *river.XkbBindingsV1,
 layer_shell: ?*river.LayerShellV1,
+compositor: ?*wl.Compositor = null,
+viewporter: ?*wp.Viewporter = null,
+single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
 locked_applied: ?bool = null,
 
 outputs: wl.list.Head(Output, .link),
@@ -78,6 +84,9 @@ pub fn init(
     wm_obj: *river.WindowManagerV1,
     xkb_bindings_obj: *river.XkbBindingsV1,
     layer_shell_obj: ?*river.LayerShellV1,
+    compositor_obj: ?*wl.Compositor,
+    viewporter_obj: ?*wp.Viewporter,
+    single_pixel_obj: ?*wp.SinglePixelBufferManagerV1,
 ) void {
     instance = .{
         .gpa = gpa,
@@ -96,6 +105,9 @@ pub fn init(
         .obj = wm_obj,
         .xkb_bindings = xkb_bindings_obj,
         .layer_shell = layer_shell_obj,
+        .compositor = compositor_obj,
+        .viewporter = viewporter_obj,
+        .single_pixel = single_pixel_obj,
 
         .outputs = undefined,
         .windows = undefined,
@@ -196,6 +208,12 @@ fn syncLayerShellDefault(delta: *Delta) void {
 }
 
 fn renderStart(delta: *Delta) void {
+    var it = delta.windows.iterator(.forward);
+    while (it.next()) |window| {
+        window.syncPosition();
+        window.syncFade();
+    }
+
     delta.obj.renderFinish();
 }
 
@@ -326,6 +344,35 @@ pub fn stopping(delta: *const Delta) bool {
     return delta.stop_deadline != null;
 }
 
+fn frameInterval(delta: *Delta) i64 {
+    var fastest: i32 = 0;
+
+    var it = delta.outputs.iterator(.forward);
+    while (it.next()) |output| {
+        const mode = output.mode orelse continue;
+        if (mode.refresh > fastest) fastest = mode.refresh;
+    }
+
+    if (fastest <= 0) return 16;
+
+    return @max(1, @divTrunc(1_000_000, @as(i64, fastest)));
+}
+
+fn animating(delta: *Delta) bool {
+    var it = delta.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.animating()) {
+            log.err("motion {s}: {any}", .{ window.identifier(), window.motion });
+            return true;
+        }
+        if (window.fading()) {
+            log.err("fade: {s}", .{window.identifier()});
+            return true;
+        }
+    }
+    return false;
+}
+
 pub fn pollTimeout(delta: *Delta) i32 {
     var soonest: ?i64 = null;
 
@@ -341,6 +388,11 @@ pub fn pollTimeout(delta: *Delta) i32 {
 
     if (delta.reload_deadline) |deadline| {
         if (soonest == null or deadline < soonest.?) soonest = deadline;
+    }
+
+    if (delta.animating()) {
+        const next = delta.millis() + delta.frameInterval();
+        if (soonest == null or next < soonest.?) soonest = next;
     }
 
     const at = soonest orelse return -1;
@@ -368,6 +420,10 @@ pub fn tick(delta: *Delta) void {
 
     var it = list.safeIterator(Seat, .link, &delta.seats);
     while (it.next()) |seat| seat.tick(now);
+
+    if (delta.animating()) {
+        delta.dirty = true;
+    }
 }
 
 pub fn millis(delta: *const Delta) i64 {

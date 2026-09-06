@@ -4,15 +4,19 @@ const Allocator = std.mem.Allocator;
 const zon = std.zon;
 const xkb = @import("xkbcommon");
 const glob = @import("util/glob.zig");
+const anim = @import("util/animation.zig");
 const Io = std.Io;
 const Action = @import("input/action.zig").Action;
 
 const Config = @This();
 
+const log = std.log.scoped(.default);
+
 gaps: Gaps = .{},
 border: Border = .{},
 input: Input = .{},
 layout: Layout = .{},
+animation: Animation = .{},
 
 bindings: ?[]const Binding = null,
 on_error: ?[]const []const u8 = null,
@@ -80,6 +84,13 @@ pub const PointerBinding = struct {
     action: Action,
 
     pub const Button = enum { left, right, middle, side, extra };
+};
+
+pub const Animation = struct {
+    duration_ms: i64 = 150,
+    fade_ms: i64 = 120,
+    fade_color: u24 = 0x282828,
+    curve: anim.Curve = .ease_out,
 };
 
 pub const WindowRule = struct {
@@ -211,6 +222,16 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
             "gaps.between must be even so it can be split across two edges, found {d}",
             .{config.gaps.between},
         );
+        return true;
+    }
+
+    if (config.animation.duration_ms < 0) {
+        report.* = try gpa.dupe(u8, "animation.duration_ms cannot be negative");
+        return false;
+    }
+
+    if (config.animation.fade_ms < 0) {
+        report.* = try gpa.dupe(u8, "animation.fade_ms cannot be negative");
         return true;
     }
 

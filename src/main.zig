@@ -3,6 +3,7 @@ const wayland = @import("wayland");
 
 const river = wayland.client.river;
 const wl = wayland.client.wl;
+const wp = wayland.client.wp;
 const fatal = std.process.fatal;
 
 const cli = @import("cli.zig");
@@ -20,6 +21,9 @@ const Globals = struct {
     window_manager: ?*river.WindowManagerV1 = null,
     xkb_bindings: ?*river.XkbBindingsV1 = null,
     layer_shell: ?*river.LayerShellV1 = null,
+    compositor: ?*wl.Compositor = null,
+    viewporter: ?*wp.Viewporter = null,
+    single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
 };
 
 const child_environment = [_][2][]const u8{
@@ -43,14 +47,14 @@ pub fn main(init: std.process.Init) !void {
     for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
     _ = child_env.swapRemove("NOTIFY_SOCKET");
 
-    const config_path = try Config.defaultPath(init.gpa, init.environ_map);
-    defer if (config_path) |path| init.gpa.free(path);
+    // const config_path = try Config.defaultPath(init.gpa, init.environ_map);
+    // defer if (config_path) |path| init.gpa.free(path);
 
     // -- FOR NESTED TESTING
-    // const config_path = if (init.environ_map.get("DELTA_CONFIG")) |p|
-    //     try init.gpa.dupe(u8, p)
-    // else
-    //     try Config.defaultPath(init.gpa, init.environ_map);
+    const config_path = if (init.environ_map.get("DELTA_CONFIG")) |p|
+        try init.gpa.dupe(u8, p)
+    else
+        try Config.defaultPath(init.gpa, init.environ_map);
 
     const loaded = try loadConfig(init.gpa, init.io, config_path);
 
@@ -82,6 +86,9 @@ pub fn main(init: std.process.Init) !void {
         globals.xkb_bindings orelse
             fatal("river_xkb_bindings_v1 not supported by the Wayland server.", .{}),
         globals.layer_shell,
+        globals.compositor,
+        globals.viewporter,
+        globals.single_pixel,
     );
 
     if (globals.layer_shell == null) {
@@ -180,6 +187,15 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
                     river.XkbBindingsV1,
                     xkb_bindings_version,
                 ) catch fatal("Out of memory.", .{});
+            } else if (std.mem.orderZ(u8, wl.Compositor.interface.name, ev.interface) == .eq) {
+                globals.compositor = registry.bind(ev.name, wl.Compositor, 4) catch
+                    fatal("Out of memory.", .{});
+            } else if (std.mem.orderZ(u8, wp.Viewporter.interface.name, ev.interface) == .eq) {
+                globals.viewporter = registry.bind(ev.name, wp.Viewporter, 1) catch
+                    fatal("Out of memory.", .{});
+            } else if (std.mem.orderZ(u8, wp.SinglePixelBufferManagerV1.interface.name, ev.interface) == .eq) {
+                globals.single_pixel = registry.bind(ev.name, wp.SinglePixelBufferManagerV1, 1) catch
+                    fatal("Out of memory.", .{});
             }
         },
         else => {},
