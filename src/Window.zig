@@ -478,7 +478,7 @@ fn syncResizing(window: *Window) void {
 }
 
 pub fn syncVisibility(window: *Window) void {
-    const want_hidden = !window.visible() or window.slot.width == 0;
+    const want_hidden = !window.visible() or window.slot.width == 0 or window.slot.height == 0;
     if (want_hidden == window.hidden) return;
 
     if (want_hidden) window.obj.hide() else window.obj.show();
@@ -490,7 +490,7 @@ pub fn sized(window: *const Window) bool {
 }
 
 pub fn syncSize(window: *Window) void {
-    if (window.slot.width == 0 or !window.sized()) return;
+    if (window.slot.width == 0 or window.slot.height == 0 or !window.sized()) return;
 
     const short_w = @max(0, window.slot.width - window.width);
     const short_h = @max(0, window.slot.height - window.height);
