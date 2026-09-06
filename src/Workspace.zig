@@ -114,12 +114,13 @@ pub fn visible(ws: *const Workspace) bool {
 }
 
 pub fn animating(ws: *const Workspace) bool {
+    if (!wm.config.animation.enabled) return false;
     const duration = wm.config.animation.duration_ms;
     return !ws.offset.done(wm.millis(), duration);
 }
 
 pub fn settle(ws: *Workspace) void {
-    const duration = wm.config.animation.duration_ms;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
     const now = wm.millis();
 
     if (ws.offset.done(now, duration)) {
@@ -130,7 +131,7 @@ pub fn settle(ws: *Workspace) void {
 
 pub fn origin(ws: *const Workspace) ?geom.Point {
     const output = ws.output orelse ws.last_output orelse return null;
-    const duration = wm.config.animation.duration_ms;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
     const now = wm.millis();
     const off = ws.offset.at(now, duration, wm.config.animation.curve);
 
