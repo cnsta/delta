@@ -23,11 +23,12 @@ animations.
 **Missing:** Multi-seat beyond the obvious cases, rules that re-evaluate when a
 window renames itself. General hardening, optimization, and time.
 
-**Notes:** I have only tested this on NixOS and I have no immediate plans change
-this fact. There is a functioning [ashell](https://github.com/MalpenZibo/ashell)
-patch packaged with my nixosModule. This enables ashell's workspace widget. I'm
-also tinkering with what will be an optional screen locker, stay tuned (as if
-I'm not the only one reading this).
+**Notes:** I have only tested this on NixOS and I have no immediate plans to
+change this fact. There is a functioning
+[ashell](https://github.com/MalpenZibo/ashell) patch packaged with my
+nixosModule. This enables ashell's workspace widget. I'm also tinkering with
+what will be an optional screen locker, stay tuned (as if I'm not the only one
+reading this).
 
 **Disclaimer:** What you read below might not be completely up to date.
 
