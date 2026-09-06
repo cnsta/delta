@@ -43,6 +43,7 @@ repeat_at: i64 = 0,
 op: Op = .none,
 op_dx: i32 = 0,
 op_dy: i32 = 0,
+op_started: i64 = 0,
 op_release: bool = false,
 
 shell: ?*river.LayerShellSeatV1 = null,
@@ -184,7 +185,14 @@ pub fn manage(seat: *Seat) void {
 
     while (seat.pending.pop()) |action| action.execute(seat);
 
+    const op_timeout_ms = 30_000;
+
     if (seat.op_release) {
+        seat.endOp();
+    } else if (seat.op != .none and wm.millis() - seat.op_started > op_timeout_ms) {
+        log.warn("pointer op ran for {d}ms without a release, ending it", .{
+            wm.millis() - seat.op_started,
+        });
         seat.endOp();
     } else switch (seat.op) {
         .none => {},
