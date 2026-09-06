@@ -175,6 +175,7 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |window| {
             window.syncSize();
             window.syncVisibility();
+            window.syncFadeState();
         }
     }
     {
@@ -361,14 +362,7 @@ fn frameInterval(delta: *Delta) i64 {
 fn animating(delta: *Delta) bool {
     var it = delta.windows.iterator(.forward);
     while (it.next()) |window| {
-        if (window.animating()) {
-            log.err("motion {s}: {any}", .{ window.identifier(), window.motion });
-            return true;
-        }
-        if (window.fading()) {
-            log.err("fade: {s}", .{window.identifier()});
-            return true;
-        }
+        if (window.animating() or window.fading()) return true;
     }
     return false;
 }
