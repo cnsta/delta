@@ -51,6 +51,7 @@ motion: animation.Lerp = .zero,
 bounds: geom.Size = geom.Size.zero,
 fade: ?Overlay = null,
 fade_alpha: animation.Fade = .{ .settled = 0 },
+pending_fade: bool = true,
 proposed: geom.Size = geom.Size.zero,
 tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
@@ -111,6 +112,7 @@ pub fn create(river_window: *river.WindowV1) void {
     window.obj.setListener(*Window, listener, window);
     wm.windows.append(window);
     wm.ipc_dirty = true;
+    window.pending_fade = true;
     window.fade_alpha = .{ .settled = 1 };
 }
 
@@ -210,7 +212,6 @@ pub fn syncPosition(window: *Window) void {
 
 pub fn syncFade(window: *Window) void {
     const fade = if (window.fade) |*f| f else return;
-    log.info("fade: alpha {d}", .{window.fade_alpha.at(wm.millis(), wm.config.animation.fade_ms, .linear)});
 
     const duration = wm.config.animation.fade_ms;
     const now = wm.millis();
@@ -222,25 +223,41 @@ pub fn syncFade(window: *Window) void {
         window.slot.size(),
         Overlay.Color.rgba(wm.config.animation.fade_color, alpha),
     );
+}
 
-    if (window.fade_alpha.done(now, duration)) {
-        fade.destroy();
-        window.fade = null;
+pub fn syncFadeState(window: *Window) void {
+    if (window.fade) |*fade| {
+        if (window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms)) {
+            fade.destroy();
+            window.fade = null;
+        }
     }
+
+    window.beginFade();
 }
 
 pub fn fading(window: *const Window) bool {
-    if (window.fade == null) return false;
     if (!window.visible()) return false;
+    if (wm.config.animation.fade_ms <= 0) return false;
+    if (window.pending_fade) return true;
+    if (window.fade == null) return false;
     return !window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms);
 }
 
 fn beginFade(window: *Window) void {
-    const duration = wm.config.animation.fade_ms;
-    if (duration <= 0) return;
+    if (!window.pending_fade) return;
+    if (window.fade != null) return;
+    if (!window.visible()) return;
     if (window.slot.width <= 0 or window.slot.height <= 0) return;
 
+    const duration = wm.config.animation.fade_ms;
+    if (duration <= 0) {
+        window.pending_fade = false;
+        return;
+    }
+
     window.fade = Overlay.create(window) orelse return;
+    window.pending_fade = false;
 
     window.fade_alpha = .{ .moving = .{
         .from = 1,
@@ -335,7 +352,6 @@ fn apply(window: *Window, p: rules.Placement) void {
 
     if (window.placed == null) {
         window.placeInSlot(.immediate);
-        window.beginFade();
     } else {
         window.placeInSlot(.animated);
     }

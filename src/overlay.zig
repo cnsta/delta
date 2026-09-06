@@ -21,7 +21,7 @@ decoration: *river.DecorationV1,
 buffer: ?*wl.Buffer = null,
 
 applied: struct {
-    offset: geom.Point = geom.Point.zero,
+    offset: ?geom.Point = null,
     size: geom.Size = geom.Size.zero,
     color: Color = .{},
 } = .{},
@@ -110,17 +110,19 @@ pub fn destroy(overlay: *Overlay) void {
 }
 
 pub fn update(overlay: *Overlay, offset: geom.Point, size: geom.Size, color: Color) void {
-    if (!offset.eql(overlay.applied.offset)) {
+    const offset_changed = overlay.applied.offset == null or !offset.eql(overlay.applied.offset.?);
+    if (offset_changed) {
         overlay.decoration.setOffset(offset.x, offset.y);
         overlay.applied.offset = offset;
     }
 
-    if (size.eql(overlay.applied.size) and color.eql(overlay.applied.color)) return;
+    if (!offset_changed and size.eql(overlay.applied.size) and color.eql(overlay.applied.color)) return;
 
     const manager = wm.single_pixel orelse return;
 
     if (size.width <= 0 or size.height <= 0) {
         overlay.surface.attach(null, 0, 0);
+        overlay.decoration.syncNextCommit();
         overlay.surface.commit();
 
         if (overlay.buffer) |old| old.destroy();
@@ -146,6 +148,7 @@ pub fn update(overlay: *Overlay, offset: geom.Point, size: geom.Size, color: Col
 
     overlay.surface.attach(buffer, 0, 0);
     overlay.surface.damageBuffer(0, 0, std.math.maxInt(i32), std.math.maxInt(i32));
+    overlay.decoration.syncNextCommit();
     overlay.surface.commit();
 
     if (overlay.buffer) |old| old.destroy();
