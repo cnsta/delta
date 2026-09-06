@@ -24,6 +24,13 @@
         .resize_step = 32,
     },
 
+    .animation = .{
+        .enabled = true,
+        .duration_ms = 175,
+        .fade_ms = 250,
+        .curve = .ease_out,
+    },
+
     // Runs when a reload fails, with the diagnostic as its last argument.
     .on_error = .{ "notify-send", "delta: config error" },
 
@@ -32,10 +39,7 @@
     .bindings = .{
         .{ .mods = .{.super}, .keys = .{"space"}, .action = .{ .spawn = .{"fuzzel"} } },
         .{ .mods = .{.super}, .keys = .{"t"}, .action = .{ .spawn = .{"ghostty"} } },
-        .{ .mods = .{.alt}, .keys = .{"z"}, .action = .{ .spawn = .{"foot"} } },
         .{ .mods = .{.super}, .keys = .{"w"}, .action = .{ .spawn = .{"zen"} } },
-        .{ .mods = .{ .super, .shift }, .keys = .{"w"}, .action = .{ .spawn = .{"zen --private-window"} } },
-        .{ .mods = .{.super}, .keys = .{"i"}, .action = .{ .spawn = .{"byt"} } },
 
         .{ .mods = .{.super}, .keys = .{"q"}, .action = .close },
         .{ .mods = .{.super}, .keys = .{"f"}, .action = .toggle_fullscreen },
@@ -46,7 +50,7 @@
         .{ .mods = .{.super}, .keys = .{ "k", "Up" }, .action = .{ .focus_direction = .up } },
         .{ .mods = .{.super}, .keys = .{ "l", "Right" }, .action = .{ .focus_direction = .right } },
 
-        // Swedish layout
+        // The following four binds only make sense on layouts where plus and minus aren't shifted keys.
         .{ .mods = .{.super}, .keys = .{ "plus", "KP_Add" }, .action = .{ .resize = .grow_width } },
         .{ .mods = .{.super}, .keys = .{ "minus", "KP_Subtract" }, .action = .{ .resize = .shrink_width } },
 

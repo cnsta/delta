@@ -8,17 +8,28 @@ windows go. delta is such a client, speaking `river-window-management-v1`.
 
 Written in Zig. Two dependencies: `zig-wayland` and `zig-xkbcommon`.
 
-## Status
+## Status & Contribution
 
-Usable, and daily-driven by its author. Not stable. Expect the config format to
-change.
+Usable, I'm currently daily-driving it, however, it should not be considered
+stable. Expect the config format to change, and things to break. I do this on my
+spare time as a hobby. Contributions are appreciated, but perhaps forking the
+code and building something for yourself is more advisible.
 
 **Works:** bsp-ish tiling, workspaces, floating windows, fullscreen, keyboard
 and pointer resize, directional focus, key repeat, pointer warping, layer shell
-(bars, launchers, lock screens), window rules, live config reload, an IPC.
+(bars, launchers, lock screens), window rules, live config reload, an IPC, basic
+animations.
 
-**Missing:** Animations, multi-seat beyond the obvious cases, rules that
-re-evaluate when a window renames itself.
+**Missing:** Multi-seat beyond the obvious cases, rules that re-evaluate when a
+window renames itself. General hardening, optimization, and time.
+
+**Notes:** I have only tested this on NixOS and I have no immediate plans change
+this fact. There is a functioning [ashell](https://github.com/MalpenZibo/ashell)
+patch packaged with my nixosModule. This enables ashell's workspace widget. I'm
+also tinkering with what will be an optional screen locker, stay tuned (as if
+I'm not the only one reading this).
+
+**Disclaimer:** What you read below might not be completely up to date.
 
 ## Building
 
