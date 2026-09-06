@@ -27,7 +27,7 @@ pub fn ready(socket_path: ?[]const u8) void {
         return;
     }
     const fd: posix.fd_t = @intCast(fd_rc);
-    defer posix.close(fd);
+    defer _ = std.c.close(fd);
 
     const message = "READY=1";
     const sent = linux.sendto(fd, message.ptr, message.len, 0, @ptrCast(&addr), addr_len);

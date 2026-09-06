@@ -187,7 +187,6 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
     window.motion.retarget(
         .{ .x = x, .y = y },
         wm.millis(),
-        wm.config.animationx.duration_ms,
         duration,
         wm.config.animation.curve,
     );

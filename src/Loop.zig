@@ -69,7 +69,7 @@ pub fn init(display: *wl.Display) !Loop {
 
 pub fn deinit(loop: *Loop) void {
     if (loop.watcher) |*w| w.deinit();
-    posix.close(loop.signals);
+    _ = std.c.close(loop.signals);
 }
 
 pub fn run(loop: *Loop) !void {
