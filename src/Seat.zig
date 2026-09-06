@@ -518,6 +518,7 @@ pub fn pointerMove(seat: *Seat, window: *Window) void {
     seat.op = .{ .move = .{ .window = window } };
     seat.op_dx = 0;
     seat.op_dy = 0;
+    seat.op_started = wm.millis();
 }
 
 pub fn pointerResize(seat: *Seat, window: *Window) void {
@@ -528,6 +529,7 @@ pub fn pointerResize(seat: *Seat, window: *Window) void {
     seat.op = .{ .resize = .{ .window = window } };
     seat.op_dx = 0;
     seat.op_dy = 0;
+    seat.op_started = wm.millis();
 }
 
 // -- key repeat --------------------------------------------------------

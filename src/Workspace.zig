@@ -25,7 +25,6 @@ offset: animation.Lerp = .zero,
 
 windows: wl.list.Head(Window, .workspace_link),
 layout: Eddy = .{},
-last_spawn_time: i64 = 0,
 
 pub const Id = u32;
 

@@ -77,8 +77,6 @@ pub fn deinit(loop: *Loop) void {
 
 pub fn run(loop: *Loop) !void {
     while (wm.running) {
-        wm.tickClock();
-
         while (!loop.display.prepareRead()) {
             if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
         }
@@ -90,6 +88,8 @@ pub fn run(loop: *Loop) !void {
             loop.display.cancelRead();
             return err;
         };
+
+        wm.tickClock();
 
         const report_now = wm.millis();
         if (report_now - loop.last_report >= 1000) {
