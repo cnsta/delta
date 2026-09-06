@@ -190,6 +190,7 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
         duration,
         wm.config.animation.curve,
     );
+    wm.dirty = true;
 }
 
 pub fn syncPosition(window: *Window) void {
@@ -376,9 +377,22 @@ fn apply(window: *Window, p: rules.Placement) void {
     }
 
     if (window.placed == null) {
+        if (window.workspace) |ws| ws.last_spawn_time = wm.millis();
+        window.placeInSlot(.immediate);
+    } else if (size_changed) {
         window.placeInSlot(.immediate);
     } else if (origin_moved) {
-        window.placeInSlot(.animated);
+        const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+        const spawn_recent = if (window.workspace) |ws|
+            (wm.millis() - ws.last_spawn_time < duration)
+        else
+            false;
+
+        if (spawn_recent) {
+            window.placeInSlot(.immediate);
+        } else {
+            window.placeInSlot(.animated);
+        }
     }
 }
 

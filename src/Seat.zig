@@ -404,6 +404,7 @@ pub fn moveDirection(seat: *Seat, dir: geom.Direction) void {
 
     ws.layout.swap(window, target);
     wm.ipc_dirty = true;
+    wm.dirty = true;
 
     seat.warpTo(window);
 }

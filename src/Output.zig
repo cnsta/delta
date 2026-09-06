@@ -142,6 +142,7 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
         target.offset = .{ .settled = .{ .x = in_start_x, .y = 0 } };
         target.offset.retarget(geom.Point.zero, now, duration, curve);
+        wm.dirty = true;
     } else {
         outgoing.offset = .zero;
         target.offset = .zero;
