@@ -122,7 +122,7 @@ pub const Lerp = union(enum) {
 
         const current = lerp.at(now, duration, curve);
 
-        if (current.eql(target)) {
+        if (lerp.* == .settled and current.eql(target)) {
             lerp.* = .{ .settled = target };
             return;
         }
