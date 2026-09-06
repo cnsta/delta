@@ -18,6 +18,9 @@ display: *wl.Display,
 signals: posix.fd_t,
 watcher: ?Watcher,
 fds: [4 + Server.max_clients]posix.pollfd,
+last_manage: u64 = 0,
+last_render: u64 = 0,
+last_report: i64 = 0,
 
 const wayland_fd = 0;
 const signal_fd = 1;
@@ -87,6 +90,18 @@ pub fn run(loop: *Loop) !void {
             loop.display.cancelRead();
             return err;
         };
+
+        const report_now = wm.millis();
+        if (report_now - loop.last_report >= 1000) {
+            std.log.err("{d} manage/s, {d} render/s", .{
+                wm.manage_count - loop.last_manage,
+                wm.render_count - loop.last_render,
+            });
+
+            loop.last_manage = wm.manage_count;
+            loop.last_render = wm.render_count;
+            loop.last_report = report_now;
+        }
 
         const revents = loop.fds[wayland_fd].revents;
 

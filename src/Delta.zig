@@ -70,6 +70,9 @@ shutting_down: bool = false,
 dirty: bool = false,
 now: i64 = 0,
 
+manage_count: u64 = 0,
+render_count: u64 = 0,
+
 pub const stop_timeout_ms = 1000;
 pub const reload_debounce_ms = 50;
 
@@ -144,6 +147,7 @@ pub fn listener(
 }
 
 fn manageStart(delta: *Delta) void {
+    delta.manage_count += 1;
     {
         var it = list.safeIterator(Window, .link, &delta.windows);
         while (it.next()) |window| window.maybeDestroy();
@@ -215,6 +219,7 @@ fn syncLayerShellDefault(delta: *Delta) void {
 }
 
 fn renderStart(delta: *Delta) void {
+    delta.render_count += 1;
     var it = delta.windows.iterator(.forward);
     while (it.next()) |window| {
         window.syncPosition();
