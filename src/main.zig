@@ -80,14 +80,14 @@ pub fn main(init: std.process.Init) !void {
     for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
     _ = child_env.swapRemove("NOTIFY_SOCKET");
 
-    // const config_path = try Config.defaultPath(init.gpa, init.environ_map);
-    // defer if (config_path) |path| init.gpa.free(path);
+    const config_path = try Config.defaultPath(init.gpa, init.environ_map);
+    defer if (config_path) |path| init.gpa.free(path);
 
     // -- FOR NESTED TESTING
-    const config_path = if (init.environ_map.get("DELTA_CONFIG")) |p|
-        try init.gpa.dupe(u8, p)
-    else
-        try Config.defaultPath(init.gpa, init.environ_map);
+    // const config_path = if (init.environ_map.get("DELTA_CONFIG")) |p|
+    //     try init.gpa.dupe(u8, p)
+    // else
+    //     try Config.defaultPath(init.gpa, init.environ_map);
 
     const loaded = try loadConfig(init.gpa, init.io, config_path);
 
