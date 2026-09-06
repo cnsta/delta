@@ -32,7 +32,7 @@ pub fn init(path: []const u8) ?Watcher {
     const wd_rc = linux.inotify_add_watch(@intCast(fd), &dir_z, mask);
     if (checked(wd_rc) == null) {
         log.warn("cannot watch {s}: errno {d}", .{ dir, -signed(wd_rc) });
-        _ = std.c.close(@intCast(fd));
+        posix.close(@intCast(fd));
         return null;
     }
 
@@ -40,7 +40,7 @@ pub fn init(path: []const u8) ?Watcher {
 }
 
 pub fn deinit(watcher: *Watcher) void {
-    _ = std.c.close(watcher.fd);
+    posix.close(watcher.fd);
     watcher.* = undefined;
 }
 
@@ -55,7 +55,7 @@ pub fn drain(watcher: *Watcher) bool {
             error.WouldBlock => return changed,
             else => {
                 log.err("config watch failed, giving up: {t}", .{err});
-                _ = std.c.close(watcher.fd);
+                posix.close(watcher.fd);
                 watcher.fd = -1;
                 return changed;
             },
