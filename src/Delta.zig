@@ -424,6 +424,10 @@ pub fn tick(delta: *Delta) void {
 
     var it = list.safeIterator(Seat, .link, &delta.seats);
     while (it.next()) |seat| seat.tick(now);
+
+    if (delta.animating()) {
+        delta.dirty = true;
+    }
 }
 
 pub fn millis(delta: *const Delta) i64 {
