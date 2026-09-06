@@ -87,6 +87,7 @@ pub const PointerBinding = struct {
 };
 
 pub const Animation = struct {
+    enabled: bool = true,
     duration_ms: i64 = 150,
     fade_ms: i64 = 120,
     fade_color: u24 = 0x282828,
@@ -362,6 +363,7 @@ test "a partial config leaves the rest at defaults" {
         \\.{
         \\    .gaps = .{ .between = 4 },
         \\    .input = .{ .cursor = .{ .warp = .none } },
+        \\    .animation = .{ .enabled = false },
         \\}
     , &report)).?;
     defer loaded.deinit();
@@ -370,6 +372,7 @@ test "a partial config leaves the rest at defaults" {
     try std.testing.expectEqual(@as(i32, 8), loaded.config.gaps.edge);
     try std.testing.expectEqual(Cursor.Warp.none, loaded.config.input.cursor.warp);
     try std.testing.expectEqual(@as(i32, 2), loaded.config.border.width);
+    try std.testing.expectEqual(false, loaded.config.animation.enabled);
 }
 
 test "strings are owned by the arena" {
@@ -451,7 +454,6 @@ test "bindings parse and resolve their keysyms" {
     try std.testing.expectEqual(xkb.Keysym.Return, keysym(bindings[0].keys[0]).?);
     try std.testing.expectEqual(xkb.Keysym.q, keysym(bindings[1].keys[0]).?);
     try std.testing.expectEqual(xkb.Keysym.F1, keysym(bindings[2].keys[0]).?);
-
     try std.testing.expectEqual(@as(usize, 0), bindings[2].mods.len);
 }
 
@@ -514,7 +516,7 @@ test "a failed parse frees everything it allocated" {
         ".{ .unknown = 1 }",
         ".{ .gaps = .{ .between = 7 } }",
         ".{ .gaps = .{ .between = 4 .edge = 8 } }",
-        ".{ .bindings = .{ .{ .key = \"Nope\", .action = .close } } }",
+        ".{ .bindings = .{ .{ .keys = .{\"Nope\"}, .action = .close } } }",
         ".{ .on_error = .{ \"notify-send\", \"x\" }, .unknown = 1 }",
         "42",
     };
