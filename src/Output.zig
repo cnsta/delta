@@ -115,18 +115,20 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
     const outgoing = output.workspace;
     outgoing.output = null;
-    outgoing.last_output = output;
+    outgoing.last_output = if (outgoing.isEmpty()) null else output;
     output.previous = outgoing;
 
     output.workspace = target;
     target.output = output;
+
+    wm.ipc_dirty = true;
 
     const duration = wm.config.animation.duration_ms;
     const curve = wm.config.animation.curve;
     const now = wm.millis();
     const w = output.width;
 
-    if (duration > 0 and w > 0) {
+    if (duration > 0 and w > 0 and outgoing.last_output != null) {
         const slide_right = target.id > outgoing.id;
         const out_target_x: i32 = if (slide_right) -w else w;
         const in_start_x: i32 = if (slide_right) w else -w;
@@ -135,6 +137,9 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
         target.offset = .{ .settled = .{ .x = in_start_x, .y = 0 } };
         target.offset.retarget(geom.Point.zero, now, duration, curve);
+    } else {
+        outgoing.offset = .zero;
+        target.offset = .zero;
     }
 }
 

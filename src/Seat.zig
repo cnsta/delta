@@ -418,9 +418,10 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
 
     if (seat.workspace() == target) return;
 
-    if (target.output == null) {
-        const o = seat.output orelse return;
+    if (seat.output) |o| {
         o.setWorkspace(target);
+    } else if (target.output == null) {
+        if (wm.outputs.first()) |o| o.setWorkspace(target);
     }
 
     seat.dropFocus();
