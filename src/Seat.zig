@@ -303,13 +303,6 @@ fn dragTiled(seat: *Seat, m: *Op.Move) void {
     ws.layout.swap(m.window, target);
 }
 
-fn sameZone(a: ?Eddy.Zone, b: ?Eddy.Zone) bool {
-    if (a == null and b == null) return true;
-    const x = a orelse return false;
-    const y = b orelse return false;
-    return x.split == y.split and x.before == y.before;
-}
-
 pub fn tick(seat: *Seat, now: i64) void {
     const binding = seat.repeat_binding orelse return;
     if (now < seat.repeat_at) return;

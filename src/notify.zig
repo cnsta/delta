@@ -1,5 +1,6 @@
 const std = @import("std");
 
+const posix = std.posix;
 const linux = std.os.linux;
 
 const log = std.log.scoped(.default);
@@ -25,8 +26,8 @@ pub fn ready(socket_path: ?[]const u8) void {
         log.warn("cannot open the notify socket: errno {d}", .{-signed(fd_rc)});
         return;
     }
-    const fd: i32 = @intCast(fd_rc);
-    defer _ = std.c.close(fd);
+    const fd: posix.fd_t = @intCast(fd_rc);
+    defer posix.close(fd);
 
     const message = "READY=1";
     const sent = linux.sendto(fd, message.ptr, message.len, 0, @ptrCast(&addr), addr_len);
