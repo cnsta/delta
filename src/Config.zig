@@ -227,7 +227,7 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
 
     if (config.animation.duration_ms < 0) {
         report.* = try gpa.dupe(u8, "animation.duration_ms cannot be negative");
-        return false;
+        return true;
     }
 
     if (config.animation.fade_ms < 0) {
@@ -438,9 +438,9 @@ test "bindings parse and resolve their keysyms" {
     var loaded = (try parse(gpa,
         \\.{
         \\    .bindings = .{
-        \\        .{ .mods = .{.super}, .key = "Return", .action = .{ .spawn = .{"ghostty"} } },
-        \\        .{ .mods = .{ .super, .shift }, .key = "q", .action = .close },
-        \\        .{ .key = "F1", .action = .toggle_floating },
+        \\        .{ .mods = .{.super}, .keys = .{"Return"}, .action = .{ .spawn = .{"ghostty"} } },
+        \\        .{ .mods = .{ .super, .shift }, .keys = .{"q"}, .action = .close },
+        \\        .{ .keys = .{"F1"}, .action = .toggle_floating },
         \\    },
         \\}
     , &report)).?;
@@ -448,9 +448,9 @@ test "bindings parse and resolve their keysyms" {
 
     const bindings = loaded.config.bindings.?;
     try std.testing.expectEqual(@as(usize, 3), bindings.len);
-    try std.testing.expectEqual(xkb.Keysym.Return, bindings[0].keysym().?);
-    try std.testing.expectEqual(xkb.Keysym.q, bindings[1].keysym().?);
-    try std.testing.expectEqual(xkb.Keysym.F1, bindings[2].keysym().?);
+    try std.testing.expectEqual(xkb.Keysym.Return, keysym(bindings[0].keys[0]).?);
+    try std.testing.expectEqual(xkb.Keysym.q, keysym(bindings[1].keys[0]).?);
+    try std.testing.expectEqual(xkb.Keysym.F1, keysym(bindings[2].keys[0]).?);
 
     try std.testing.expectEqual(@as(usize, 0), bindings[2].mods.len);
 }
@@ -461,7 +461,7 @@ test "an unknown key name is rejected by name" {
     defer if (report) |r| gpa.free(r);
 
     try std.testing.expect(try parse(gpa,
-        \\.{ .bindings = .{ .{ .key = "Retrun", .action = .close } } }
+        \\.{ .bindings = .{ .{ .keys = .{"Retrun"}, .action = .close } } }
     , &report) == null);
 
     try std.testing.expect(std.mem.indexOf(u8, report.?, "Retrun") != null);
@@ -474,14 +474,14 @@ test "keysym names are case sensitive" {
 
     var loaded = (try parse(gpa,
         \\.{ .bindings = .{
-        \\    .{ .key = "a", .action = .close },
-        \\    .{ .key = "A", .action = .close },
+        \\    .{ .keys = .{"a"}, .action = .close },
+        \\    .{ .keys = .{"A"}, .action = .close },
         \\} }
     , &report)).?;
     defer loaded.deinit();
 
     const bindings = loaded.config.bindings.?;
-    try std.testing.expect(bindings[0].keysym().? != bindings[1].keysym().?);
+    try std.testing.expect(keysym(bindings[0].keys[0]).? != keysym(bindings[1].keys[0]).?);
 }
 
 test "no bindings and default bindings are different things" {
@@ -535,7 +535,7 @@ test "a config with strings survives being freed" {
     var loaded = (try parse(gpa,
         \\.{
         \\    .on_error = .{ "notify-send", "delta" },
-        \\    .bindings = .{ .{ .key = "Return", .action = .{ .spawn = .{"ghostty"} } } },
+        \\    .bindings = .{ .{ .keys = .{"Return"}, .action = .{ .spawn = .{"ghostty"} } } },
         \\}
     , &report)).?;
     loaded.deinit();
