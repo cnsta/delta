@@ -123,7 +123,7 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
     wm.ipc_dirty = true;
 
-    const duration = wm.config.animation.duration_ms;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
     const curve = wm.config.animation.curve;
     const now = wm.millis();
     const w = output.width;
