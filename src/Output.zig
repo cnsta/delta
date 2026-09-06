@@ -110,8 +110,13 @@ pub fn maybeDestroy(output: *Output) void {
 }
 
 pub fn setWorkspace(output: *Output, target: *Workspace) void {
-    std.debug.assert(target.output == null or target.output == output);
     if (output.workspace == target) return;
+
+    if (target.output) |other| {
+        other.workspace = other.previous orelse Workspace.firstUnmapped();
+        other.workspace.output = other;
+        other.previous = null;
+    }
 
     const outgoing = output.workspace;
     outgoing.output = null;

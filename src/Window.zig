@@ -595,7 +595,7 @@ pub fn manage(window: *Window) void {
         });
 
         window.setWorkspace(if (applied.workspace) |id|
-            Workspace.get(id)
+            Workspace.getOrCreate(id)
         else
             window.initialWorkspace());
 

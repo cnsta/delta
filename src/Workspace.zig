@@ -28,15 +28,22 @@ layout: Eddy = .{},
 
 pub const Id = u32;
 
-pub fn get(id: Id) *Workspace {
+pub fn getOrCreate(id: Id) *Workspace {
     var it = wm.workspaces.iterator(.forward);
     while (it.next()) |ws| {
         if (ws.id == id) return ws;
-
-        // Sorted, so the first larger id is where this one belongs.
         if (ws.id > id) return insertBefore(&ws.link, id);
     }
     return insertBefore(&wm.workspaces.link, id);
+}
+
+pub fn find(id: Id) ?*Workspace {
+    var it = wm.workspaces.iterator(.forward);
+    while (it.next()) |ws| {
+        if (ws.id == id) return ws;
+        if (ws.id > id) return null;
+    }
+    return null;
 }
 
 pub fn firstUnmapped() *Workspace {
@@ -49,7 +56,7 @@ pub fn firstUnmapped() *Workspace {
             id += 1;
         }
     }
-    return get(id);
+    return getOrCreate(id);
 }
 
 /// TODO: multi-seat
@@ -58,7 +65,7 @@ pub fn forNewWindow() *Workspace {
         if (seat.output) |output| return output.workspace;
     }
     if (wm.outputs.first()) |output| return output.workspace;
-    return get(1);
+    return getOrCreate(1);
 }
 
 pub fn maybeDestroy(ws: *Workspace) void {

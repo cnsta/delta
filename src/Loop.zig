@@ -74,6 +74,8 @@ pub fn deinit(loop: *Loop) void {
 
 pub fn run(loop: *Loop) !void {
     while (wm.running) {
+        wm.tickClock();
+
         while (!loop.display.prepareRead()) {
             if (loop.display.dispatchPending() != .SUCCESS) return error.DispatchFailed;
         }

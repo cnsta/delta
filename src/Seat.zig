@@ -414,7 +414,7 @@ pub fn toggleSplit(seat: *Seat) void {
 }
 
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
-    const target = Workspace.get(id);
+    const target = Workspace.getOrCreate(id);
 
     if (seat.workspace() == target) return;
 
@@ -430,7 +430,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
 
 pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     const window = seat.focused orelse return;
-    const target = Workspace.get(id);
+    const target = Workspace.getOrCreate(id);
     if (window.workspace == target) return;
 
     window.setWorkspace(target);
