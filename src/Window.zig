@@ -256,7 +256,9 @@ pub fn fading(window: *const Window) bool {
     if (!wm.config.animation.enabled) return false;
     if (!window.visible()) return false;
     if (wm.config.animation.fade_ms <= 0) return false;
-    if (window.pending_fade) return true;
+
+    if (window.pending_fade) return window.slot.width > 0 and window.slot.height > 0;
+
     if (window.fade == null) return false;
     return !window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms);
 }
@@ -373,7 +375,7 @@ fn apply(window: *Window, p: rules.Placement) void {
         });
     }
 
-    if (window.placed == null or size_changed) {
+    if (window.placed == null) {
         window.placeInSlot(.immediate);
     } else if (origin_moved) {
         window.placeInSlot(.animated);
