@@ -69,6 +69,7 @@ shutting_down: bool = false,
 
 dirty: bool = false,
 now: i64 = 0,
+last_anim_report: i64 = 0,
 
 manage_count: u64 = 0,
 render_count: u64 = 0,
@@ -402,8 +403,23 @@ pub fn pollTimeout(delta: *Delta) i32 {
     }
 
     if (delta.animating()) {
-        const next = delta.millis() + delta.frameInterval();
-        if (soonest == null or next < soonest.?) soonest = next;
+        delta.dirty = true;
+
+        if (delta.now - delta.last_anim_report >= 1000) {
+            delta.last_anim_report = delta.now;
+
+            var win_it = delta.windows.iterator(.forward);
+            while (win_it.next()) |w| {
+                if (w.animating()) log.err("anim: window {s} motion {any}", .{ w.identifier(), w.motion });
+                if (w.fading()) log.err("anim: window {s} fade pending={} alpha {any}", .{
+                    w.identifier(), w.pending_fade, w.fade_alpha,
+                });
+            }
+            var ws_it = delta.workspaces.iterator(.forward);
+            while (ws_it.next()) |ws| {
+                if (ws.animating()) log.err("anim: workspace {d} offset {any}", .{ ws.id, ws.offset });
+            }
+        }
     }
 
     const at = soonest orelse return -1;
