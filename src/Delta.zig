@@ -171,6 +171,10 @@ fn manageStart(delta: *Delta) void {
         }
     }
     {
+        var it = list.safeIterator(Workspace, .link, &delta.workspaces);
+        while (it.next()) |workspace| workspace.settle();
+    }
+    {
         var it = list.safeIterator(Window, .link, &delta.windows);
         while (it.next()) |window| {
             window.syncSize();
@@ -360,9 +364,13 @@ fn frameInterval(delta: *Delta) i64 {
 }
 
 fn animating(delta: *Delta) bool {
-    var it = delta.windows.iterator(.forward);
-    while (it.next()) |window| {
+    var win_it = delta.windows.iterator(.forward);
+    while (win_it.next()) |window| {
         if (window.animating() or window.fading()) return true;
+    }
+    var ws_it = delta.workspaces.iterator(.forward);
+    while (ws_it.next()) |ws| {
+        if (ws.animating()) return true;
     }
     return false;
 }

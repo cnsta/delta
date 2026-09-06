@@ -350,9 +350,9 @@ fn apply(window: *Window, p: rules.Placement) void {
         });
     }
 
-    if (window.placed == null) {
+    if (window.placed == null or size_changed) {
         window.placeInSlot(.immediate);
-    } else {
+    } else if (origin_moved) {
         window.placeInSlot(.animated);
     }
 }
