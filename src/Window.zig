@@ -182,10 +182,13 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
     window.x = x;
     window.y = y;
 
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+
     window.motion.retarget(
         .{ .x = x, .y = y },
         wm.millis(),
-        wm.config.animation.duration_ms,
+        wm.config.animationx.duration_ms,
+        duration,
         wm.config.animation.curve,
     );
 }
@@ -194,7 +197,7 @@ pub fn syncPosition(window: *Window) void {
     const ws = window.workspace orelse return;
     const origin = ws.origin() orelse return;
 
-    const duration = wm.config.animation.duration_ms;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
     const now = wm.millis();
 
     const local = window.motion.at(now, duration, wm.config.animation.curve);
@@ -211,6 +214,7 @@ pub fn syncPosition(window: *Window) void {
 }
 
 pub fn syncFade(window: *Window) void {
+    if (!wm.config.animation.enabled) return;
     const fade = if (window.fade) |*f| f else return;
 
     const duration = wm.config.animation.fade_ms;
@@ -226,6 +230,15 @@ pub fn syncFade(window: *Window) void {
 }
 
 pub fn syncFadeState(window: *Window) void {
+    if (!wm.config.animation.enabled) {
+        if (window.fade) |*fade| {
+            fade.destroy();
+            window.fade = null;
+        }
+        window.pending_fade = false;
+        return;
+    }
+
     if (window.fade) |*fade| {
         if (window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms)) {
             fade.destroy();
@@ -237,6 +250,7 @@ pub fn syncFadeState(window: *Window) void {
 }
 
 pub fn fading(window: *const Window) bool {
+    if (!wm.config.animation.enabled) return false;
     if (!window.visible()) return false;
     if (wm.config.animation.fade_ms <= 0) return false;
     if (window.pending_fade) return true;
@@ -245,6 +259,11 @@ pub fn fading(window: *const Window) bool {
 }
 
 fn beginFade(window: *Window) void {
+    if (!wm.config.animation.enabled) {
+        window.pending_fade = false;
+        return;
+    }
+
     if (!window.pending_fade) return;
     if (window.fade != null) return;
     if (!window.visible()) return;
@@ -267,6 +286,7 @@ fn beginFade(window: *Window) void {
 }
 
 pub fn animating(window: *const Window) bool {
+    if (!wm.config.animation.enabled) return false;
     if (!window.visible()) return false;
 
     return !window.motion.done(wm.millis(), wm.config.animation.duration_ms);
