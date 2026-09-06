@@ -364,6 +364,8 @@ fn frameInterval(delta: *Delta) i64 {
 }
 
 fn animating(delta: *Delta) bool {
+    if (!delta.config.animation.enabled) return false;
+
     var win_it = delta.windows.iterator(.forward);
     while (win_it.next()) |window| {
         if (window.animating() or window.fading()) return true;
@@ -422,10 +424,6 @@ pub fn tick(delta: *Delta) void {
 
     var it = list.safeIterator(Seat, .link, &delta.seats);
     while (it.next()) |seat| seat.tick(now);
-
-    if (delta.animating()) {
-        delta.dirty = true;
-    }
 }
 
 pub fn millis(delta: *const Delta) i64 {
