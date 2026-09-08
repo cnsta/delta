@@ -35,7 +35,7 @@ pub const Window = struct {
     workspace: ?u32,
 
     focused: bool,
-    floating: bool,
+    float: bool,
     fullscreen: bool,
 };
 
@@ -133,7 +133,7 @@ test "identical state serialises identically" {
             .title = "~",
             .workspace = 1,
             .focused = true,
-            .floating = false,
+            .float = false,
             .fullscreen = false,
         },
     };
@@ -156,7 +156,7 @@ test "an absent app id is null rather than empty" {
         .title = null,
         .workspace = null,
         .focused = false,
-        .floating = false,
+        .float = false,
         .fullscreen = false,
     };
 

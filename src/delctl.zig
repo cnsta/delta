@@ -309,7 +309,7 @@ fn renderWindow(
     try w.print(arena, "  workspace  {?d}\n", .{window.workspace});
 
     if (window.focused) try w.appendSlice(arena, "  focused\n");
-    if (window.floating) try w.appendSlice(arena, "  floating\n");
+    if (window.float) try w.appendSlice(arena, "  float\n");
     if (window.fullscreen) try w.appendSlice(arena, "  fullscreen\n");
 }
 

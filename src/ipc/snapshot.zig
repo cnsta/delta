@@ -39,7 +39,7 @@ fn windows(arena: Allocator) ![]const protocol.Window {
             .title = window.title,
             .workspace = if (window.workspace) |ws| ws.id else null,
             .focused = window.focus_count > 0,
-            .floating = window.floating,
+            .float = window.float,
             .fullscreen = window.fullscreen != null,
         });
     }

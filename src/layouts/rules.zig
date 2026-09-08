@@ -83,7 +83,7 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
     return .{ .content = content, .tiled = tiled };
 }
 
-pub fn placeFloating(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
+pub fn placeFloat(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
     var content = box;
 
     if (limits.min.width > 0) content.width = @max(content.width, limits.min.width);
@@ -171,15 +171,15 @@ test "keepReachable leaves a grabbable strip on screen" {
 
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 1000, .height = 1000 };
 
-    const off_right = placeFloating(.{ .x = 5000, .y = 100, .width = 400, .height = 300 }, area, .{});
+    const off_right = placeFloat(.{ .x = 5000, .y = 100, .width = 400, .height = 300 }, area, .{});
     try std.testing.expect(off_right.content.x < area.x + area.width);
     try std.testing.expect(off_right.content.x + off_right.content.width > area.x + area.width);
 
-    const off_left = placeFloating(.{ .x = -5000, .y = 100, .width = 400, .height = 300 }, area, .{});
+    const off_left = placeFloat(.{ .x = -5000, .y = 100, .width = 400, .height = 300 }, area, .{});
     try std.testing.expect(off_left.content.x + off_left.content.width > area.x);
 
     const inside: geom.Rect = .{ .x = 100, .y = 100, .width = 400, .height = 300 };
-    try std.testing.expect(placeFloating(inside, area, .{}).content.eql(inside));
+    try std.testing.expect(placeFloat(inside, area, .{}).content.eql(inside));
 }
 
 test "sticks absorbs the pixel lost to integer subdivision" {

@@ -35,8 +35,8 @@ pub const Border = struct {
 };
 
 pub const Input = struct {
-    repeat_delay_ms: u32 = 400,
-    repeat_rate_ms: u32 = 40,
+    repeat_delay: u32 = 400,
+    repeat_rate: u32 = 40,
 
     focus_follows_pointer: bool = true,
     focus_new_windows: bool = true,
@@ -88,8 +88,8 @@ pub const PointerBinding = struct {
 
 pub const Animation = struct {
     enabled: bool = true,
-    duration_ms: i64 = 150,
-    fade_ms: i64 = 120,
+    duration: i64 = 150,
+    fade_duration: i64 = 120,
     fade_color: u24 = 0x282828,
     curve: anim.Curve = .ease_out,
 };
@@ -98,11 +98,11 @@ pub const WindowRule = struct {
     matches: []const Match = &.{},
 
     excludes: []const Match = &.{},
-    open_floating: ?bool = null,
-    open_fullscreen: ?bool = null,
-    open_workspace: ?u32 = null,
-    open_focused: ?bool = null,
-    open_warp: ?bool = null,
+    float: ?bool = null,
+    fullscreen: ?bool = null,
+    workspace: ?u32 = null,
+    focused: ?bool = null,
+    warp: ?bool = null,
 };
 
 pub const Match = struct {
@@ -119,7 +119,7 @@ pub const Candidate = struct {
 };
 
 pub const Resolved = struct {
-    floating: ?bool = null,
+    float: ?bool = null,
     fullscreen: ?bool = null,
     workspace: ?u32 = null,
     focused: ?bool = null,
@@ -132,11 +132,11 @@ pub fn resolve(config: *const Config, candidate: Candidate) Resolved {
     for (config.window_rules) |rule| {
         if (!applies(rule, candidate)) continue;
 
-        if (rule.open_floating) |v| result.floating = v;
-        if (rule.open_fullscreen) |v| result.fullscreen = v;
-        if (rule.open_workspace) |v| result.workspace = v;
-        if (rule.open_focused) |v| result.focused = v;
-        if (rule.open_warp) |v| result.warp = v;
+        if (rule.float) |v| result.float = v;
+        if (rule.fullscreen) |v| result.fullscreen = v;
+        if (rule.workspace) |v| result.workspace = v;
+        if (rule.focused) |v| result.focused = v;
+        if (rule.warp) |v| result.warp = v;
     }
 
     return result;
@@ -226,13 +226,13 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
         return true;
     }
 
-    if (config.animation.duration_ms < 0) {
-        report.* = try gpa.dupe(u8, "animation.duration_ms cannot be negative");
+    if (config.animation.duration < 0) {
+        report.* = try gpa.dupe(u8, "animation.duration cannot be negative");
         return true;
     }
 
-    if (config.animation.fade_ms < 0) {
-        report.* = try gpa.dupe(u8, "animation.fade_ms cannot be negative");
+    if (config.animation.fade_duration < 0) {
+        report.* = try gpa.dupe(u8, "animation.fade_duration cannot be negative");
         return true;
     }
 
@@ -272,11 +272,11 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
         }
     }
     for (config.window_rules) |rule| {
-        if (rule.open_workspace) |id| {
+        if (rule.workspace) |id| {
             if (id < 1 or id > 9) {
                 report.* = try std.fmt.allocPrint(
                     gpa,
-                    "open_workspace must be between 1 and 9, found {d}",
+                    "workspace must be between 1 and 9, found {d}",
                     .{id},
                 );
                 return true;
@@ -443,7 +443,7 @@ test "bindings parse and resolve their keysyms" {
         \\    .bindings = .{
         \\        .{ .mods = .{.super}, .keys = .{"Return"}, .action = .{ .spawn = .{"ghostty"} } },
         \\        .{ .mods = .{ .super, .shift }, .keys = .{"q"}, .action = .close },
-        \\        .{ .keys = .{"F1"}, .action = .toggle_floating },
+        \\        .{ .keys = .{"F1"}, .action = .toggle_float },
         \\    },
         \\}
     , &report)).?;
@@ -553,16 +553,16 @@ test "rules match on app_id, title and dialog" {
         \\    .window_rules = .{
         \\        .{
         \\            .matches = .{ .{ .app_id = "vesktop" } },
-        \\            .open_workspace = 4,
+        \\            .workspace = 4,
         \\        },
         \\        .{
         \\            .matches = .{ .{ .dialog = true } },
-        \\            .open_floating = true,
-        \\            .open_warp = false,
+        \\            .float = true,
+        \\            .warp = false,
         \\        },
         \\        .{
         \\            .matches = .{ .{ .app_id = "zen", .title = "*Picture-in-Picture*" } },
-        \\            .open_floating = true,
+        \\            .float = true,
         \\        },
         \\    },
         \\}
@@ -573,18 +573,18 @@ test "rules match on app_id, title and dialog" {
 
     const vesktop = config.resolve(.{ .app_id = "vesktop", .title = "Discord", .dialog = false });
     try std.testing.expectEqual(@as(?u32, 4), vesktop.workspace);
-    try std.testing.expectEqual(@as(?bool, null), vesktop.floating);
+    try std.testing.expectEqual(@as(?bool, null), vesktop.float);
 
     const dialog = config.resolve(.{ .app_id = "nautilus", .title = "Open File", .dialog = true });
-    try std.testing.expectEqual(@as(?bool, true), dialog.floating);
+    try std.testing.expectEqual(@as(?bool, true), dialog.float);
     try std.testing.expectEqual(@as(?bool, false), dialog.warp);
 
     // Both conditions in one Match must hold.
     const pip = config.resolve(.{ .app_id = "zen", .title = "Zen — Picture-in-Picture", .dialog = false });
-    try std.testing.expectEqual(@as(?bool, true), pip.floating);
+    try std.testing.expectEqual(@as(?bool, true), pip.float);
 
     const plain = config.resolve(.{ .app_id = "zen", .title = "Zen Browser", .dialog = false });
-    try std.testing.expectEqual(@as(?bool, null), plain.floating);
+    try std.testing.expectEqual(@as(?bool, null), plain.float);
 }
 
 test "later rules win, and excludes beat matches" {
@@ -595,13 +595,13 @@ test "later rules win, and excludes beat matches" {
     var loaded = (try parse(gpa,
         \\.{
         \\    .window_rules = .{
-        \\        .{ .matches = .{ .{ .dialog = true } }, .open_floating = true },
+        \\        .{ .matches = .{ .{ .dialog = true } }, .float = true },
         \\        .{
         \\            .matches = .{ .{ .app_id = "steam" } },
         \\            .excludes = .{ .{ .title = "Friends List" } },
-        \\            .open_floating = false,
+        \\            .float = false,
         \\        },
-        \\        .{ .excludes = .{ .{ .app_id = "zen" } }, .open_focused = true },
+        \\        .{ .excludes = .{ .{ .app_id = "zen" } }, .focused = true },
         \\    },
         \\}
     , &report)).?;
@@ -611,11 +611,11 @@ test "later rules win, and excludes beat matches" {
 
     // The second rule overrides the first for a steam dialog.
     const steam = config.resolve(.{ .app_id = "steam", .title = "Settings", .dialog = true });
-    try std.testing.expectEqual(@as(?bool, false), steam.floating);
+    try std.testing.expectEqual(@as(?bool, false), steam.float);
 
     // ...unless excluded, in which case only the first rule applied.
     const friends = config.resolve(.{ .app_id = "steam", .title = "Friends List", .dialog = true });
-    try std.testing.expectEqual(@as(?bool, true), friends.floating);
+    try std.testing.expectEqual(@as(?bool, true), friends.float);
 
     // A rule with no matches applies to everything the excludes let through.
     try std.testing.expectEqual(
@@ -634,7 +634,7 @@ test "a window with no app id does not match a pattern for one" {
     defer if (report) |r| gpa.free(r);
 
     var loaded = (try parse(gpa,
-        \\.{ .window_rules = .{ .{ .matches = .{ .{ .app_id = "*" } }, .open_floating = true } } }
+        \\.{ .window_rules = .{ .{ .matches = .{ .{ .app_id = "*" } }, .float = true } } }
     , &report)).?;
     defer loaded.deinit();
 
@@ -642,6 +642,6 @@ test "a window with no app id does not match a pattern for one" {
     // not there rather than about the empty string.
     try std.testing.expectEqual(
         @as(?bool, null),
-        loaded.config.resolve(.{ .app_id = null, .title = "x", .dialog = false }).floating,
+        loaded.config.resolve(.{ .app_id = null, .title = "x", .dialog = false }).float,
     );
 }

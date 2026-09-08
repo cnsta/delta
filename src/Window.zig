@@ -58,7 +58,7 @@ decorated_focused: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
 tiled_informed: bool = false,
-floating: bool = false,
+float: bool = false,
 float_box: geom.Rect = geom.Rect.zero,
 
 identifier_buf: [32]u8 = undefined,
@@ -182,7 +182,7 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
     window.x = x;
     window.y = y;
 
-    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
 
     window.motion.retarget(
         .{ .x = x, .y = y },
@@ -197,7 +197,7 @@ pub fn syncPosition(window: *Window) void {
     const ws = window.workspace orelse return;
     const origin = ws.origin() orelse return;
 
-    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
     const now = wm.millis();
 
     const local = window.motion.at(now, duration, wm.config.animation.curve);
@@ -216,7 +216,7 @@ pub fn syncPosition(window: *Window) void {
 pub fn syncFade(window: *Window) void {
     const fade = if (window.fade) |*f| f else return;
 
-    const duration = wm.config.animation.fade_ms;
+    const duration = wm.config.animation.fade_duration;
     const now = wm.millis();
 
     const alpha = window.fade_alpha.at(now, duration, wm.config.animation.curve);
@@ -244,7 +244,7 @@ pub fn syncFadeState(window: *Window) void {
     }
 
     if (window.fade) |*fade| {
-        if (window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms)) {
+        if (window.fade_alpha.done(wm.millis(), wm.config.animation.fade_duration)) {
             fade.destroy();
             window.fade = null;
         }
@@ -256,12 +256,12 @@ pub fn syncFadeState(window: *Window) void {
 pub fn fading(window: *const Window) bool {
     if (!wm.config.animation.enabled) return false;
     if (!window.visible()) return false;
-    if (wm.config.animation.fade_ms <= 0) return false;
+    if (wm.config.animation.fade_duration <= 0) return false;
 
     if (window.pending_fade) return window.slot.width > 0 and window.slot.height > 0;
 
     if (window.fade == null) return false;
-    return !window.fade_alpha.done(wm.millis(), wm.config.animation.fade_ms);
+    return !window.fade_alpha.done(wm.millis(), wm.config.animation.fade_duration);
 }
 
 fn beginFade(window: *Window) void {
@@ -275,7 +275,7 @@ fn beginFade(window: *Window) void {
     if (!window.visible()) return;
     if (window.slot.width <= 0 or window.slot.height <= 0) return;
 
-    const duration = wm.config.animation.fade_ms;
+    const duration = wm.config.animation.fade_duration;
     if (duration <= 0) {
         window.pending_fade = false;
         return;
@@ -295,7 +295,7 @@ pub fn animating(window: *const Window) bool {
     if (!wm.config.animation.enabled) return false;
     if (!window.visible()) return false;
 
-    return !window.motion.done(wm.millis(), wm.config.animation.duration_ms);
+    return !window.motion.done(wm.millis(), wm.config.animation.duration);
 }
 
 fn syncBounds(window: *Window) void {
@@ -311,12 +311,12 @@ fn syncBounds(window: *Window) void {
 }
 
 pub fn applyPlacement(window: *Window, p: rules.Placement) void {
-    if (window.floating) return;
+    if (window.float) return;
 
     window.apply(p);
 }
 
-pub fn applyFloating(window: *Window, area: geom.Rect) void {
+pub fn applyFloat(window: *Window, area: geom.Rect) void {
     if (window.float_box.width == 0) {
         if (!window.sized()) {
             window.propose(geom.Size.zero);
@@ -325,7 +325,7 @@ pub fn applyFloating(window: *Window, area: geom.Rect) void {
         window.float_box = window.initialFloatBox(area);
     }
 
-    window.apply(rules.placeFloating(window.float_box, area, window.limits));
+    window.apply(rules.placeFloat(window.float_box, area, window.limits));
 }
 
 fn initialFloatBox(window: *const Window, area: geom.Rect) geom.Rect {
@@ -432,10 +432,10 @@ fn syncFullscreen(window: *Window) void {
     window.fullscreen_applied = window.fullscreen;
 }
 
-pub fn raiseFloating(ws: *Workspace) void {
+pub fn raiseFloat(ws: *Workspace) void {
     var it = ws.windows.iterator(.forward);
     while (it.next()) |window| {
-        if (!window.floating or !window.visible()) continue;
+        if (!window.float or !window.visible()) continue;
         if (window.raised) continue;
 
         window.node.placeTop();
@@ -446,13 +446,13 @@ pub fn raiseFloating(ws: *Workspace) void {
     }
 }
 
-pub fn toggleFloating(window: *Window) void {
-    window.setFloating(!window.floating);
+pub fn toggleFloat(window: *Window) void {
+    window.setFloat(!window.float);
 }
 
-pub fn setFloating(window: *Window, on: bool) void {
-    if (window.floating == on) return;
-    window.floating = on;
+pub fn setFloat(window: *Window, on: bool) void {
+    if (window.float == on) return;
+    window.float = on;
     wm.ipc_dirty = true;
 
     const ws = window.workspace orelse return;
@@ -470,15 +470,15 @@ pub fn setFloating(window: *Window, on: bool) void {
         ws.layout.insert(window, near, ws.cursor());
     }
 
-    ws.raiseFloating();
+    ws.raiseFloat();
 }
 
-pub fn moveFloating(window: *Window, dx: i32, dy: i32) void {
+pub fn moveFloat(window: *Window, dx: i32, dy: i32) void {
     window.float_box.x += dx;
     window.float_box.y += dy;
 }
 
-pub fn resizeFloating(window: *Window, dx: i32, dy: i32) void {
+pub fn resizeFloat(window: *Window, dx: i32, dy: i32) void {
     window.float_box.width = @max(1, window.float_box.width + dx);
     window.float_box.height = @max(1, window.float_box.height + dy);
 }
@@ -606,7 +606,7 @@ pub fn manage(window: *Window) void {
         else
             window.initialWorkspace());
 
-        if (applied.floating orelse (window.parent != null)) window.setFloating(true);
+        if (applied.float orelse (window.parent != null)) window.setFloat(true);
         if (applied.fullscreen orelse false) window.toggleFullscreen();
 
         window.syncNewFocus(applied);

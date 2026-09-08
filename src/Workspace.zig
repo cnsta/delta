@@ -100,14 +100,14 @@ pub fn arrange(ws: *Workspace, area: geom.Rect) void {
 
     var it = ws.windows.iterator(.forward);
     while (it.next()) |window| {
-        if (window.floating) window.applyFloating(area);
+        if (window.float) window.applyFloat(area);
     }
 }
 
-pub fn raiseFloating(ws: *Workspace) void {
+pub fn raiseFloat(ws: *Workspace) void {
     var it = ws.windows.iterator(.forward);
     while (it.next()) |window| {
-        if (window.floating and window.visible()) window.node.placeTop();
+        if (window.float and window.visible()) window.node.placeTop();
     }
 }
 
@@ -122,7 +122,7 @@ pub fn visible(ws: *const Workspace) bool {
 }
 
 pub fn settle(ws: *Workspace) void {
-    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
     const now = wm.millis();
 
     if (!ws.offset.done(now, duration)) {
@@ -138,12 +138,12 @@ pub fn settle(ws: *Workspace) void {
 
 pub fn animating(ws: *const Workspace) bool {
     if (!wm.config.animation.enabled) return false;
-    return !ws.offset.done(wm.millis(), wm.config.animation.duration_ms);
+    return !ws.offset.done(wm.millis(), wm.config.animation.duration);
 }
 
 pub fn origin(ws: *const Workspace) ?geom.Point {
     const output = ws.output orelse ws.last_output orelse return null;
-    const duration = if (wm.config.animation.enabled) wm.config.animation.duration_ms else 0;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
     const now = wm.millis();
     const off = ws.offset.at(now, duration, wm.config.animation.curve);
 

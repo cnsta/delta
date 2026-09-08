@@ -202,8 +202,8 @@ pub fn manage(seat: *Seat) void {
                 if (seat.op_dx * seat.op_dx + seat.op_dy * seat.op_dy >= t * t) m.dragging = true;
             }
 
-            if (!m.dragging) {} else if (m.window.floating) {
-                m.window.moveFloating(
+            if (!m.dragging) {} else if (m.window.float) {
+                m.window.moveFloat(
                     seat.op_dx - m.applied_dx,
                     seat.op_dy - m.applied_dy,
                 );
@@ -218,8 +218,8 @@ pub fn manage(seat: *Seat) void {
             const dx = seat.op_dx - args.applied_dx;
             const dy = seat.op_dy - args.applied_dy;
 
-            if (args.window.floating) {
-                args.window.resizeFloating(dx, dy);
+            if (args.window.float) {
+                args.window.resizeFloat(dx, dy);
             } else {
                 Eddy.resize(args.window, dx, dy);
             }
@@ -322,7 +322,7 @@ pub fn tick(seat: *Seat, now: i64) void {
 
     _ = seat.pending.push(binding.action);
 
-    seat.repeat_at = now + wm.config.input.repeat_rate_ms;
+    seat.repeat_at = now + wm.config.input.repeat_rate;
     wm.dirty = true;
 }
 
@@ -347,7 +347,7 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
     if (target) |w| {
         seat.obj.focusWindow(w.obj);
         w.node.placeTop();
-        if (w.workspace) |ws| ws.raiseFloating();
+        if (w.workspace) |ws| ws.raiseFloat();
 
         w.link.remove();
         wm.windows.append(w);
@@ -412,7 +412,7 @@ pub fn moveDirection(seat: *Seat, dir: geom.Direction) void {
 pub fn toggleSplit(seat: *Seat) void {
     const window = seat.focused orelse return;
 
-    if (window.floating) return;
+    if (window.float) return;
     if (window.fullscreen != null) return;
 
     const ws = window.workspace orelse return;
@@ -466,12 +466,12 @@ pub fn toggleFullscreen(seat: *Seat) void {
     window.toggleFullscreen();
 }
 
-pub fn toggleFloating(seat: *Seat) void {
+pub fn toggleFloat(seat: *Seat) void {
     const window = seat.focused orelse return;
 
     if (window.fullscreen != null) return;
 
-    window.toggleFloating();
+    window.toggleFloat();
 }
 
 pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
@@ -480,12 +480,12 @@ pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
     if (window.fullscreen != null) return;
     const step = rules.resizeStep();
 
-    if (window.floating) {
+    if (window.float) {
         switch (how) {
-            .grow_width => window.resizeFloating(step, 0),
-            .shrink_width => window.resizeFloating(-step, 0),
-            .grow_height => window.resizeFloating(0, step),
-            .shrink_height => window.resizeFloating(0, -step),
+            .grow_width => window.resizeFloat(step, 0),
+            .shrink_width => window.resizeFloat(-step, 0),
+            .grow_height => window.resizeFloat(0, step),
+            .shrink_height => window.resizeFloat(0, -step),
         }
         return;
     }
@@ -538,7 +538,7 @@ pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
     if (!binding.action.repeats()) return;
 
     seat.repeat_binding = binding;
-    seat.repeat_at = wm.millis() + wm.config.input.repeat_delay_ms;
+    seat.repeat_at = wm.millis() + wm.config.input.repeat_delay;
 }
 
 pub fn endRepeat(seat: *Seat, binding: *XkbBinding) void {
@@ -635,7 +635,7 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
 
     XkbBinding.create(seat, super, .q, .close);
     XkbBinding.create(seat, super, .f, .toggle_fullscreen);
-    XkbBinding.create(seat, super_shift, .f, .toggle_floating);
+    XkbBinding.create(seat, super_shift, .f, .toggle_float);
     XkbBinding.create(seat, super, .n, .focus_next);
 
     const arrows = [4]u32{ 0xff51, 0xff53, 0xff52, 0xff54 };

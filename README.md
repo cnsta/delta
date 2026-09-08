@@ -11,7 +11,7 @@ Written in Zig. Two dependencies: `zig-wayland` and `zig-xkbcommon`.
 ## Status & Contribution
 
 Usable, I'm currently daily-driving it, however, it should not be considered
-stable. Expect the config format to change, and things to break. I do this on my
+stable. Expect the config format to change, and things to break; I do this on my
 spare time as a hobby. Contributions are appreciated, but perhaps forking the
 code and building something for yourself is more advisible.
 
@@ -87,8 +87,8 @@ options, everything has a default and anything omitted keeps it.
     },
 
     .window_rules = .{
-        .{ .matches = .{.{ .app_id = "vesktop" }}, .open_workspace = 4 },
-        .{ .matches = .{.{ .app_id = "*", .dialog = true }}, .open_floating = true },
+        .{ .matches = .{.{ .app_id = "vesktop" }}, .workspace = 4 },
+        .{ .matches = .{.{ .app_id = "*", .dialog = true }}, .float = true },
     },
 }
 ```
