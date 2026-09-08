@@ -17,7 +17,11 @@ pub fn handle(request: []const u8, streaming: *bool) ?[]const u8 {
         return "{\"err\":\"internal error\"}";
     };
 
-    return line;
+    wm.ipc_reply.clearRetainingCapacity();
+    wm.ipc_reply.appendSlice(wm.gpa, line) catch {
+        return "{\"err\":\"internal error\"}";
+    };
+    return wm.ipc_reply.items;
 }
 
 fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]const u8 {

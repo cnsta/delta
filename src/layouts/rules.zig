@@ -137,6 +137,55 @@ fn sticks(a: i32, b: i32) bool {
     return @abs(a - b) <= 1;
 }
 
+pub fn showDesktopDirection(
+    is_float: bool,
+    escape: ?geom.Direction,
+    box: geom.Rect,
+    output: *const Output,
+    blocked: geom.Edges,
+) geom.Direction {
+    const primary = if (is_float) floatDirection(box, output, blocked) else escape;
+    return primary orelse fallbackDirection(blocked);
+}
+
+fn floatDirection(box: geom.Rect, output: *const Output, blocked: geom.Edges) ?geom.Direction {
+    if (box.width == 0 or box.height == 0) return null;
+
+    const c = output.rect().center();
+    const wc = box.center();
+    const dx = wc.x - c.x;
+    const dy = wc.y - c.y;
+
+    const primary: geom.Direction = if (@abs(dx) >= @abs(dy))
+        (if (dx >= 0) .right else .left)
+    else
+        (if (dy >= 0) .down else .up);
+    if (!blocked.blocks(primary)) return primary;
+
+    const secondary: geom.Direction = if (primary == .left or primary == .right)
+        (if (dy >= 0) .down else .up)
+    else
+        (if (dx >= 0) .right else .left);
+    if (!blocked.blocks(secondary)) return secondary;
+
+    return null;
+}
+
+fn fallbackDirection(blocked: geom.Edges) geom.Direction {
+    if (blocked.top) return .down;
+    if (blocked.bottom) return .up;
+    if (blocked.left) return .right;
+    if (blocked.right) return .left;
+    return .down;
+}
+
+pub fn desktopClearance(box: geom.Rect, dir: geom.Direction, output: *const Output) i32 {
+    return switch (dir) {
+        .left, .right => output.width + @max(0, box.width),
+        .up, .down => output.height + @max(0, box.height),
+    };
+}
+
 pub fn useDefaultConfig() void {
     wm.config = .{};
     wm.gpa = std.testing.allocator;
@@ -203,4 +252,65 @@ test "clamp centres a window that cannot shrink to its box" {
 
     try std.testing.expect(wide.content.x >= area.x);
     try std.testing.expect(wide.content.x + wide.content.width <= area.x + area.width);
+}
+
+fn testOutput(x: i32, y: i32, width: i32, height: i32) Output {
+    var output: Output = undefined;
+    output.x = x;
+    output.y = y;
+    output.width = width;
+    output.height = height;
+    return output;
+}
+
+test "showDesktopDirection uses the tiled escape direction when not floating" {
+    const output = testOutput(0, 0, 1000, 1000);
+    const box: geom.Rect = .{ .x = 0, .y = 0, .width = 500, .height = 1000 };
+
+    try std.testing.expectEqual(
+        geom.Direction.left,
+        showDesktopDirection(false, .left, box, &output, .{}),
+    );
+}
+
+test "showDesktopDirection picks a float quadrant direction" {
+    const output = testOutput(0, 0, 1000, 1000);
+    // box centre is (800, 500), output centre is (500, 500): straight right.
+    const box: geom.Rect = .{ .x = 700, .y = 400, .width = 200, .height = 200 };
+
+    try std.testing.expectEqual(
+        geom.Direction.right,
+        showDesktopDirection(true, null, box, &output, .{}),
+    );
+}
+
+test "showDesktopDirection falls back away from a bar when nothing else applies" {
+    const output = testOutput(0, 0, 1000, 1000);
+
+    try std.testing.expectEqual(
+        geom.Direction.down,
+        showDesktopDirection(true, null, geom.Rect.zero, &output, .{ .top = true }),
+    );
+    try std.testing.expectEqual(
+        geom.Direction.up,
+        showDesktopDirection(false, null, geom.Rect.zero, &output, .{ .bottom = true }),
+    );
+    try std.testing.expectEqual(
+        geom.Direction.right,
+        showDesktopDirection(false, null, geom.Rect.zero, &output, .{ .left = true }),
+    );
+    try std.testing.expectEqual(
+        geom.Direction.left,
+        showDesktopDirection(false, null, geom.Rect.zero, &output, .{ .right = true }),
+    );
+}
+
+test "desktopClearance measures the full off-screen distance" {
+    const output = testOutput(0, 0, 1000, 600);
+    const box: geom.Rect = .{ .x = 0, .y = 0, .width = 200, .height = 100 };
+
+    try std.testing.expectEqual(@as(i32, 1200), desktopClearance(box, .left, &output));
+    try std.testing.expectEqual(@as(i32, 1200), desktopClearance(box, .right, &output));
+    try std.testing.expectEqual(@as(i32, 700), desktopClearance(box, .up, &output));
+    try std.testing.expectEqual(@as(i32, 700), desktopClearance(box, .down, &output));
 }

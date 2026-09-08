@@ -35,7 +35,7 @@ pub const Action = union(enum) {
     pub fn execute(action: Action, seat: *Seat) void {
         switch (action) {
             .none => {},
-            .spawn => |argv| spawn(argv),
+            .spawn => |argv| if (!wm.desktop_shown) spawn(argv),
             .close => seat.closeFocused(),
             .focus_next => seat.focusNext(),
             .focus_direction => |dir| seat.focusDirection(dir),

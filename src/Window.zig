@@ -496,60 +496,13 @@ pub fn setDesktopHidden(window: *Window, hidden: bool) void {
     if (!window.visible()) return;
 
     const output = window.currentOutput() orelse return;
-    const dir = window.showDesktopDirection(output);
-    const distance = window.desktopClearance(dir, output);
-    window.retargetDesktopOffset(dir.delta(distance));
-}
-
-fn showDesktopDirection(window: *Window, output: *Output) geom.Direction {
     const blocked = output.blockedEdges();
-
-    if (!window.float) {
-        if (Eddy.escapeDirection(window, blocked)) |dir| return dir;
-    } else if (window.floatDirection(output, blocked)) |dir| {
-        return dir;
-    }
-    return fallbackDirection(blocked);
-}
-
-fn floatDirection(window: *const Window, output: *Output, blocked: geom.Edges) ?geom.Direction {
     const box = if (window.slot.width > 0) window.slot else window.float_box;
-    if (box.width == 0 or box.height == 0) return null;
+    const escape = if (!window.float) Eddy.escapeDirection(window, blocked) else null;
 
-    const c = output.rect().center();
-    const wc = box.center();
-    const dx = wc.x - c.x;
-    const dy = wc.y - c.y;
-
-    const primary: geom.Direction = if (@abs(dx) >= @abs(dy))
-        (if (dx >= 0) .right else .left)
-    else
-        (if (dy >= 0) .down else .up);
-    if (!blocked.blocks(primary)) return primary;
-
-    const secondary: geom.Direction = if (primary == .left or primary == .right)
-        (if (dy >= 0) .down else .up)
-    else
-        (if (dx >= 0) .right else .left);
-    if (!blocked.blocks(secondary)) return secondary;
-
-    return null;
-}
-
-fn fallbackDirection(blocked: geom.Edges) geom.Direction {
-    if (blocked.top) return .down;
-    if (blocked.bottom) return .up;
-    if (blocked.left) return .right;
-    if (blocked.right) return .left;
-    return .down;
-}
-
-fn desktopClearance(window: *const Window, dir: geom.Direction, output: *const Output) i32 {
-    const box = if (window.slot.width > 0) window.slot else window.float_box;
-    return switch (dir) {
-        .left, .right => output.width + @max(0, box.width),
-        .up, .down => output.height + @max(0, box.height),
-    };
+    const dir = rules.showDesktopDirection(window.float, escape, box, output, blocked);
+    const distance = rules.desktopClearance(box, dir, output);
+    window.retargetDesktopOffset(dir.delta(distance));
 }
 
 pub fn moveFloat(window: *Window, dx: i32, dy: i32) void {

@@ -54,6 +54,7 @@ ipc_arena: std.heap.ArenaAllocator,
 ipc_buf: std.ArrayList(u8) = .empty,
 ipc_path: ?[]const u8 = null,
 ipc_last: std.ArrayList(u8) = .empty,
+ipc_reply: std.ArrayList(u8) = .empty,
 ipc_dirty: bool = false,
 registry: *wl.Registry,
 
@@ -320,6 +321,7 @@ pub fn deinit(delta: *Delta) void {
     delta.ipc_arena.deinit();
     delta.ipc_buf.deinit(delta.gpa);
     delta.ipc_last.deinit(delta.gpa);
+    delta.ipc_reply.deinit(delta.gpa);
 }
 
 fn publish(delta: *Delta) void {
