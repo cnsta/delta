@@ -69,6 +69,7 @@ shutting_down: bool = false,
 
 dirty: bool = false,
 now: i64 = 0,
+desktop_shown: bool = false,
 next_frame: i64 = 0,
 last_anim_report: i64 = 0,
 
@@ -208,6 +209,28 @@ fn manageStart(delta: *Delta) void {
         delta.notified = true;
         notify.ready(delta.notify_socket);
     }
+}
+
+pub fn toggleShowDesktop(delta: *Delta) void {
+    delta.desktop_shown = !delta.desktop_shown;
+
+    var it = delta.windows.iterator(.forward);
+    while (it.next()) |window| window.setDesktopHidden(delta.desktop_shown);
+
+    delta.publishShowDesktop();
+}
+
+fn publishShowDesktop(delta: *Delta) void {
+    const server = if (delta.server) |*s| s else return;
+    if (!server.hasStreamingClients()) return;
+
+    const line = std.json.Stringify.valueAlloc(
+        delta.gpa,
+        protocol.Event{ .show_desktop = delta.desktop_shown },
+        .{},
+    ) catch return;
+    defer delta.gpa.free(line);
+    server.publish(line);
 }
 
 fn syncLayerShellDefault(delta: *Delta) void {

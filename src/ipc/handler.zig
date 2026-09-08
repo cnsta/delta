@@ -48,6 +48,11 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
             return try stringify(arena, protocol.Reply{ .outputs = state.outputs });
         },
 
+        .layers => {
+            const state = try snapshot.build(arena);
+            return try stringify(arena, protocol.Reply{ .layers = state.layers });
+        },
+
         .focused_window => {
             const state = try snapshot.build(arena);
 

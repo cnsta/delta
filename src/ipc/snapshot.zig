@@ -16,6 +16,7 @@ pub const State = struct {
     windows: []const protocol.Window,
     workspaces: []const protocol.Workspace,
     outputs: []const protocol.Output,
+    layers: []const protocol.Layers,
 };
 
 pub fn build(arena: Allocator) !State {
@@ -23,6 +24,7 @@ pub fn build(arena: Allocator) !State {
         .windows = try windows(arena),
         .workspaces = try workspaces(arena),
         .outputs = try outputs(arena),
+        .layers = try layers(arena),
     };
 }
 
@@ -100,6 +102,26 @@ fn outputs(arena: Allocator) ![]const protocol.Output {
 
             .workspace = output.workspace.id,
             .focused = focusedOutput() == output,
+        });
+    }
+
+    return out.items;
+}
+
+fn layers(arena: Allocator) ![]const protocol.Layers {
+    var out: std.ArrayList(protocol.Layers) = .empty;
+
+    var it = wm.outputs.iterator(.forward);
+    while (it.next()) |output| {
+        const name = output.name orelse continue;
+        const m = output.layerMargins();
+
+        try out.append(arena, .{
+            .output = name,
+            .top = m.top,
+            .bottom = m.bottom,
+            .left = m.left,
+            .right = m.right,
         });
     }
 

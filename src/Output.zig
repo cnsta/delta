@@ -164,6 +164,29 @@ pub fn usableArea(output: *const Output) geom.Rect {
     return output.usable orelse output.rect();
 }
 
+pub const Margins = struct {
+    top: i32 = 0,
+    bottom: i32 = 0,
+    left: i32 = 0,
+    right: i32 = 0,
+};
+
+pub fn layerMargins(output: *const Output) Margins {
+    const usable = output.usableArea();
+    const full = output.rect();
+    return .{
+        .top = usable.y - full.y,
+        .bottom = (full.y + full.height) - (usable.y + usable.height),
+        .left = usable.x - full.x,
+        .right = (full.x + full.width) - (usable.x + usable.width),
+    };
+}
+
+pub fn blockedEdges(output: *const Output) geom.Edges {
+    const m = output.layerMargins();
+    return .{ .top = m.top > 0, .bottom = m.bottom > 0, .left = m.left > 0, .right = m.right > 0 };
+}
+
 pub fn contains(output: *const Output, point: geom.Point) bool {
     return output.rect().contains(point);
 }

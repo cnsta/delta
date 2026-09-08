@@ -653,6 +653,7 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
     }
 
     XkbBinding.create(seat, super, .v, .toggle_split);
+    XkbBinding.create(seat, super, .Tab, .show_desktop);
 
     const question: xkb.Keysym = @enumFromInt(0x03f);
     const minus: xkb.Keysym = @enumFromInt(0x02d);

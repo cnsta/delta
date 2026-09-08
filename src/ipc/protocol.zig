@@ -8,6 +8,7 @@ pub const Request = union(enum) {
     workspaces,
     focused_window,
     outputs,
+    layers,
 
     action: Action,
 
@@ -24,6 +25,7 @@ pub const Reply = union(enum) {
     workspaces: []const Workspace,
     focused_window: ?Window,
     outputs: []const Output,
+    layers: []const Layers,
 };
 
 pub const Window = struct {
@@ -64,6 +66,16 @@ pub const Event = union(enum) {
     },
 
     config_loaded: struct { failed: bool },
+
+    show_desktop: bool,
+};
+
+pub const Layers = struct {
+    output: []const u8,
+    top: i32,
+    bottom: i32,
+    left: i32,
+    right: i32,
 };
 
 pub const Output = struct {

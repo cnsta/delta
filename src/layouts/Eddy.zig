@@ -365,6 +365,29 @@ fn nearest(window: *Window, want: Split) ?struct { branch: *Branch, sign: f32 } 
     return null;
 }
 
+pub fn escapeDirection(window: *Window, blocked: geom.Edges) ?geom.Direction {
+    const branch = window.branch orelse return null;
+
+    const natural = sideDirection(branch.split, indexOf(branch, .{ .window = window }));
+    if (!blocked.blocks(natural)) return natural;
+
+    const cross: Split = if (branch.split == .vertical) .horizontal else .vertical;
+    var node: Node = .{ .window = window };
+    while (parentOf(node)) |b| : (node = .{ .branch = b }) {
+        if (b.split != cross) continue;
+        const alt = sideDirection(b.split, indexOf(b, node));
+        return if (!blocked.blocks(alt)) alt else null;
+    }
+    return null;
+}
+
+fn sideDirection(split: Split, index: u1) geom.Direction {
+    return switch (split) {
+        .vertical => if (index == 0) .left else .right,
+        .horizontal => if (index == 0) .up else .down,
+    };
+}
+
 fn firstWindow(node: Node) *Window {
     var current = node;
     while (true) {
@@ -537,4 +560,70 @@ test "toggleSplit on a lone window does nothing" {
     layout.insert(&a, null, null);
 
     try std.testing.expect(!toggleSplit(&a));
+}
+
+test "escapeDirection: side-by-side windows escape away from each other" {
+    var a: Window = undefined;
+    var b: Window = undefined;
+
+    var root: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &a }, .{ .window = &b } },
+        .split = .vertical,
+    };
+    a.branch = &root;
+    b.branch = &root;
+
+    try std.testing.expectEqual(geom.Direction.left, escapeDirection(&a, .{}).?);
+    try std.testing.expectEqual(geom.Direction.right, escapeDirection(&b, .{}).?);
+}
+
+test "escapeDirection: a lone window blocked on its only axis has no escape" {
+    var a: Window = undefined;
+    var b: Window = undefined;
+
+    var root: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &a }, .{ .window = &b } },
+        .split = .vertical,
+    };
+    a.branch = &root;
+
+    try std.testing.expectEqual(@as(?geom.Direction, null), escapeDirection(&a, .{ .left = true }));
+}
+
+test "escapeDirection: blocked on its own axis falls back to the cross-axis ancestor" {
+    var large: Window = undefined;
+    var top: Window = undefined;
+    var bottom: Window = undefined;
+
+    var stack: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &top }, .{ .window = &bottom } },
+        .split = .horizontal,
+    };
+    var root: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &large }, .{ .branch = &stack } },
+        .split = .vertical,
+    };
+    stack.parent = &root;
+
+    large.branch = &root;
+    top.branch = &stack;
+    bottom.branch = &stack;
+
+    // the large windows natural escape is left, away from the stack.
+    try std.testing.expectEqual(geom.Direction.left, escapeDirection(&large, .{}).?);
+
+    // with no bar in the way, the stack splits away from each other.
+    try std.testing.expectEqual(geom.Direction.up, escapeDirection(&top, .{}).?);
+    try std.testing.expectEqual(geom.Direction.down, escapeDirection(&bottom, .{}).?);
+
+    // a bar at the top blocks the top window's natural "up" escape, so it
+    // falls back to the root branch's vertical axis, away from `large`.
+    try std.testing.expectEqual(geom.Direction.right, escapeDirection(&top, .{ .top = true }).?);
+
+    // the bottom window is unaffected by a top bar.
+    try std.testing.expectEqual(geom.Direction.down, escapeDirection(&bottom, .{ .top = true }).?);
 }

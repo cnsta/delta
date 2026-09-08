@@ -43,7 +43,8 @@
 
         .{ .mods = .{.super}, .keys = .{"q"}, .action = .close },
         .{ .mods = .{.super}, .keys = .{"f"}, .action = .toggle_fullscreen },
-        .{ .mods = .{ .super, .shift }, .keys = .{"f"}, .action = .toggle_floating },
+        .{ .mods = .{ .super, .shift }, .keys = .{"f"}, .action = .toggle_float },
+        .{ .mods = .{.super}, .keys = .{"Tab"}, .action = .show_desktop },
 
         .{ .mods = .{.super}, .keys = .{ "h", "Left" }, .action = .{ .focus_direction = .left } },
         .{ .mods = .{.super}, .keys = .{ "j", "Down" }, .action = .{ .focus_direction = .down } },

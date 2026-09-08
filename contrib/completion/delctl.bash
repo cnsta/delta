@@ -6,7 +6,7 @@ _delctl() {
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD - 1]}"
 
-  commands="outputs workspaces windows focused version watch"
+  commands="outputs workspaces windows layers focused version watch"
   options="--json -h --help"
 
   # One command per invocation. Once it is present, only options remain.

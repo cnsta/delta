@@ -15,6 +15,7 @@ const usage =
     \\  outputs      connected outputs and the workspace each is showing
     \\  workspaces   every workspace that exists
     \\  windows      every window delta knows about
+    \\  layers       inferred bar/exclusion margins per output
     \\  focused      the focused window, if any
     \\  version      delta's version
     \\  watch        follow state changes until interrupted
@@ -89,6 +90,7 @@ fn requestFor(cmd: []const u8) ?protocol.Request {
     if (std.mem.eql(u8, cmd, "outputs")) return .outputs;
     if (std.mem.eql(u8, cmd, "workspaces")) return .workspaces;
     if (std.mem.eql(u8, cmd, "windows")) return .windows;
+    if (std.mem.eql(u8, cmd, "layers")) return .layers;
     if (std.mem.eql(u8, cmd, "focused")) return .focused_window;
     if (std.mem.eql(u8, cmd, "version")) return .version;
     if (std.mem.eql(u8, cmd, "watch")) return .event_stream;
@@ -289,6 +291,18 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
                 try renderWindow(arena, w, win);
             } else {
                 try w.appendSlice(arena, "no focused window\n");
+            }
+        },
+
+        .layers => |list| {
+            for (list, 0..) |l, i| {
+                if (i > 0) try w.append(arena, '\n');
+
+                try w.print(arena, "{s}\n", .{l.output});
+                try w.print(arena, "  top     {d}\n", .{l.top});
+                try w.print(arena, "  bottom  {d}\n", .{l.bottom});
+                try w.print(arena, "  left    {d}\n", .{l.left});
+                try w.print(arena, "  right   {d}\n", .{l.right});
             }
         },
     }

@@ -22,6 +22,7 @@ pub const Action = union(enum) {
     toggle_fullscreen,
     toggle_split,
     toggle_float,
+    show_desktop,
     exit,
 
     pub const Resize = enum {
@@ -47,6 +48,7 @@ pub const Action = union(enum) {
             .toggle_float => seat.toggleFloat(),
             .move_direction => |dir| seat.moveDirection(dir),
             .toggle_split => seat.toggleSplit(),
+            .show_desktop => wm.toggleShowDesktop(),
             .exit => wm.obj.exitSession(),
         }
     }
@@ -65,6 +67,7 @@ pub const Action = union(enum) {
             .toggle_fullscreen,
             .toggle_float,
             .toggle_split,
+            .show_desktop,
             .exit,
             => false,
         };

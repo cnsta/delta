@@ -76,6 +76,22 @@ pub const Direction = enum {
     }
 };
 
+pub const Edges = struct {
+    top: bool = false,
+    bottom: bool = false,
+    left: bool = false,
+    right: bool = false,
+
+    pub fn blocks(edges: Edges, dir: Direction) bool {
+        return switch (dir) {
+            .left => edges.left,
+            .right => edges.right,
+            .up => edges.top,
+            .down => edges.bottom,
+        };
+    }
+};
+
 test "Rect.contains is half-open" {
     const left: Rect = .{ .x = 0, .y = 0, .width = 10, .height = 10 };
     const right: Rect = .{ .x = 10, .y = 0, .width = 10, .height = 10 };

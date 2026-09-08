@@ -7,6 +7,7 @@ _delctl() {
     'outputs:Connected outputs and their geometry'
     'workspaces:Every workspace that exists'
     'windows:Every window delta knows about'
+    'layers:Inferred bar/exclusion margins per output'
     'focused:The focused window, if any'
     "version:delta's version"
     'watch:Follow state changes until interrupted'
