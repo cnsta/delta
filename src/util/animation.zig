@@ -47,7 +47,7 @@ pub const Fade = union(enum) {
         start: i64,
     },
 
-    pub fn retarget(fade: *Fade, target: f32, now: i64, duration: i64) void {
+    pub fn retarget(fade: *Fade, target: f32, now: i64, duration: i64, curve: Curve) void {
         if (fade.goal() == target) return;
 
         if (duration <= 0) {
@@ -55,7 +55,7 @@ pub const Fade = union(enum) {
             return;
         }
 
-        const cur_val = fade.current(now, duration);
+        const cur_val = fade.at(now, duration, curve);
         fade.* = .{ .moving = .{ .from = cur_val, .to = target, .start = now } };
     }
 
@@ -87,10 +87,6 @@ pub const Fade = union(enum) {
             .settled => |v| v,
             .moving => |m| m.to,
         };
-    }
-
-    fn current(fade: Fade, now: i64, duration: i64) f32 {
-        return fade.at(now, duration, .linear);
     }
 };
 
@@ -224,7 +220,7 @@ test "overshoot actually overshoots and comes back" {
 
 test "a fade reaches its target and stops" {
     var fade: Fade = .{ .settled = 1 };
-    fade.retarget(0, 0, 100);
+    fade.retarget(0, 0, 100, .linear);
 
     try std.testing.expectApproxEqAbs(@as(f32, 1), fade.at(0, 100, .linear), 0.001);
     try std.testing.expectApproxEqAbs(@as(f32, 0.5), fade.at(50, 100, .linear), 0.001);
@@ -235,8 +231,19 @@ test "a fade reaches its target and stops" {
 
 test "retargeting to the current goal is a no-op" {
     var fade: Fade = .{ .settled = 1 };
-    fade.retarget(0, 0, 100);
+    fade.retarget(0, 0, 100, .linear);
 
-    fade.retarget(0, 50, 100);
+    fade.retarget(0, 50, 100, .linear);
     try std.testing.expect(fade.done(100, 100));
+}
+
+test "retargeting mid-flight uses the actual curve, not linear" {
+    var fade: Fade = .{ .settled = 0 };
+    fade.retarget(1, 0, 100, .ease_out);
+
+    const halfway_eased = fade.at(50, 100, .ease_out);
+    try std.testing.expect(halfway_eased != 0.5);
+
+    fade.retarget(0, 50, 100, .ease_out);
+    try std.testing.expectApproxEqAbs(halfway_eased, fade.at(50, 100, .ease_out), 0.001);
 }

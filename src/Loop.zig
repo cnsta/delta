@@ -93,7 +93,7 @@ pub fn run(loop: *Loop) !void {
 
         const report_now = wm.millis();
         if (report_now - loop.last_report >= 1000) {
-            std.log.err("{d} manage/s, {d} render/s", .{
+            log.debug("{d} manage/s, {d} render/s", .{
                 wm.manage_count - loop.last_manage,
                 wm.render_count - loop.last_render,
             });
