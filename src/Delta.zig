@@ -190,6 +190,7 @@ fn manageStart(delta: *Delta) void {
             window.syncSize();
             window.syncVisibility();
             window.syncFadeState();
+            window.syncDesktopHidden();
         }
     }
     {

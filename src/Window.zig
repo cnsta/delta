@@ -495,7 +495,8 @@ pub fn setDesktopHidden(window: *Window, hidden: bool) void {
     if (window.fullscreen != null) return;
     if (!window.visible()) return;
 
-    const output = window.currentOutput() orelse return;
+    const ws = window.workspace orelse return;
+    const output = ws.output orelse ws.last_output orelse return;
     const blocked = output.blockedEdges();
     const box = if (window.slot.width > 0) window.slot else window.float_box;
     const escape = if (!window.float) Eddy.escapeDirection(window, blocked) else null;
@@ -503,6 +504,13 @@ pub fn setDesktopHidden(window: *Window, hidden: bool) void {
     const dir = rules.showDesktopDirection(window.float, escape, box, output, blocked);
     const distance = rules.desktopClearance(box, dir, output);
     window.retargetDesktopOffset(dir.delta(distance));
+}
+
+pub fn syncDesktopHidden(window: *Window) void {
+    if (!wm.desktop_shown) return;
+    if (!window.desktop_offset.goal().eql(geom.Point.zero)) return;
+
+    window.setDesktopHidden(true);
 }
 
 pub fn moveFloat(window: *Window, dx: i32, dy: i32) void {
