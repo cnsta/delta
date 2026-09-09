@@ -298,13 +298,13 @@ fn scale(extent: i32, ratio: f32) i32 {
 
 pub fn resize(window: *Window, dx: i32, dy: i32) void {
     if (dx != 0) {
-        if (nearest(window, .vertical)) |v| {
-            applyRatio(v.branch, v.sign * ratioDelta(dx, v.branch.rect.width));
+        if (nearest(window, .vertical)) |branch| {
+            applyRatio(branch, ratioDelta(dx, branch.rect.width));
         }
     }
     if (dy != 0) {
-        if (nearest(window, .horizontal)) |h| {
-            applyRatio(h.branch, h.sign * ratioDelta(dy, h.branch.rect.height));
+        if (nearest(window, .horizontal)) |branch| {
+            applyRatio(branch, ratioDelta(dy, branch.rect.height));
         }
     }
 }
@@ -353,14 +353,10 @@ fn minExtent(node: Node, axis: Split) i32 {
 
 // -- node helpers --------------------------------------------------------
 
-fn nearest(window: *Window, want: Split) ?struct { branch: *Branch, sign: f32 } {
+fn nearest(window: *Window, want: Split) ?*Branch {
     var node: Node = .{ .window = window };
     while (parentOf(node)) |b| : (node = .{ .branch = b }) {
-        if (b.split != want) continue;
-        return .{
-            .branch = b,
-            .sign = if (indexOf(b, node) == 0) 1.0 else -1.0,
-        };
+        if (b.split == want) return b;
     }
     return null;
 }
@@ -626,4 +622,37 @@ test "escapeDirection: blocked on its own axis falls back to the cross-axis ance
 
     // the bottom window is unaffected by a top bar.
     try std.testing.expectEqual(geom.Direction.down, escapeDirection(&bottom, .{ .top = true }).?);
+}
+
+test "resize: dragging right always grows the left/top child and shrinks the right/bottom one" {
+    rules.useDefaultConfig();
+
+    var left: Window = undefined;
+    var right: Window = undefined;
+    left.limits = .{};
+    right.limits = .{};
+
+    var root: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &left }, .{ .window = &right } },
+        .split = .vertical,
+        .rect = .{ .x = 0, .y = 0, .width = 1000, .height = 500 },
+    };
+    left.branch = &root;
+    right.branch = &root;
+
+    resize(&left, 100, 0);
+    try std.testing.expect(root.ratio > 0.5);
+
+    root.ratio = 0.5;
+    resize(&right, 100, 0);
+    try std.testing.expect(root.ratio > 0.5);
+
+    root.ratio = 0.5;
+    resize(&left, -100, 0);
+    try std.testing.expect(root.ratio < 0.5);
+
+    root.ratio = 0.5;
+    resize(&right, -100, 0);
+    try std.testing.expect(root.ratio < 0.5);
 }
