@@ -20,6 +20,16 @@
         nixpkgs.follows = "nixpkgs";
       };
     };
+
+    levee = {
+      url = "git+https://git.cnst.dev/cnst/levee.git";
+      inputs = {
+        nixpkgs.follows = "nixpkgs";
+        systems.follows = "systems";
+        zig.follows = "zig";
+        zon2nix.follows = "zon2nix";
+      };
+    };
   };
 
   outputs = {
@@ -28,6 +38,7 @@
     zig,
     zon2nix,
     systems,
+    levee,
     ...
   }: let
     inherit (nixpkgs) lib legacyPackages;
@@ -104,7 +115,11 @@
 
     formatter = forAllPlatforms (pkgs: pkgs.alejandra);
 
-    nixosModules.river = import ./nix/nixosModule.nix;
+    nixosModules.river = {pkgs, ...} @ nixosArgs:
+      import ./nix/nixosModule.nix (nixosArgs
+        // {
+          leveePackage = levee.packages.${pkgs.stdenv.hostPlatform.system}.default;
+        });
     nixosModules.default = self.nixosModules.river;
   };
 }

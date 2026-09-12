@@ -16,6 +16,35 @@
         "type": "github"
       }
     },
+    "levee": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "systems": [
+          "systems"
+        ],
+        "zig": [
+          "zig"
+        ],
+        "zon2nix": [
+          "zon2nix"
+        ]
+      },
+      "locked": {
+        "lastModified": 1789209457,
+        "narHash": "sha256-B7chdfKzWFudB6x1K1Rf+NbDZ66iHu1SM7jCtJIat6c=",
+        "ref": "refs/heads/main",
+        "rev": "7b7e0c0ea0da1837e608528f102e96465637f659",
+        "revCount": 27,
+        "type": "git",
+        "url": "https://git.cnst.dev/cnst/levee.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://git.cnst.dev/cnst/levee.git"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1788372231,
@@ -31,6 +60,7 @@
     },
     "root": {
       "inputs": {
+        "levee": "levee",
         "nixpkgs": "nixpkgs",
         "systems": "systems",
         "zig": "zig",
