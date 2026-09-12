@@ -244,7 +244,7 @@ in {
             inactivity begins at all if the session turns out to already be
             locked by then, covers a manual lock (e.g. a keybinding) landing
             well before `lockTimeout`, so outputs still blank promptly rather
-            then waiting out the full timeout a second time.
+            than waiting out the full timeout a second time.
           '';
         };
 
