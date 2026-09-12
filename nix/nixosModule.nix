@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  leveePackage,
   ...
 }: let
   inherit
@@ -93,6 +94,22 @@
   kanshiConfigFile =
     optionalString (cfg.kanshi.config != null)
     " -c ${pkgs.writeText "kanshi-config" cfg.kanshi.config}";
+
+  leveeLockCmd =
+    "${pkgs.coreutils}/bin/sleep 1 && ${cfg.levee.package}/bin/levee"
+    + optionalString (cfg.levee.idle.extraArgs != [])
+    (" " + lib.concatStringsSep " " cfg.levee.idle.extraArgs);
+
+  isLeveeLocked = "${pkgs.procps}/bin/pgrep -x levee >/dev/null 2>&1";
+
+  wlopmBin = "${cfg.levee.idle.wlopmPackage}/bin/wlopm";
+
+  swayidleConfig = pkgs.writeText "swayidle-config" ''
+    timeout ${toString cfg.levee.idle.lockTimeout} '${leveeLockCmd}'
+    timeout ${toString (cfg.levee.idle.lockTimeout + cfg.levee.idle.blankTimeout)} '${wlopmBin} --off \*' resume '${wlopmBin} --on \*'
+    timeout ${toString cfg.levee.idle.blankTimeout} '${isLeveeLocked} && ${wlopmBin} --off \*' resume '${wlopmBin} --on \*'
+    before-sleep '${leveeLockCmd}'
+  '';
 in {
   options.programs.river-delta = {
     enable = mkEnableOption "the river compositor with a systemd-managed session";
@@ -186,6 +203,60 @@ in {
       };
     };
 
+    levee = {
+      enable = mkEnableOption "the levee screen locker";
+
+      package = mkOption {
+        type = types.package;
+        default = leveePackage;
+        defaultText = lib.literalMD "`levee` from its own sibling flake";
+        description = ''
+          The levee screen locker package. levee is invoked per-lock by
+          whatever idle manager you configure (e.g. swayidle). This option
+          only makes the package available and registers its PAM service, it
+          does not set up swayidle itself.
+        '';
+      };
+
+      idle = {
+        enable = mkEnableOption ''
+          swayidle to lock via levee on inactivity, blank all outputs with
+          wlopm shortly after, and lock again before sleep
+        '';
+
+        package = mkPackageOption pkgs "swayidle" {};
+
+        wlopmPackage = mkPackageOption pkgs "wlopm" {};
+
+        lockTimeout = mkOption {
+          type = types.ints.positive;
+          default = 300;
+          description = "Seconds of inactivity before levee locks the session.";
+        };
+
+        blankTimeout = mkOption {
+          type = types.ints.positive;
+          default = 20;
+          description = ''
+            Additional seconds of inactivity, past `lockTimeout`, before all
+            outputs are turned off via wlopm (turned back on on any
+            activity). Also, independently, this many seconds after
+            inactivity begins at all if the session turns out to already be
+            locked by then, covers a manual lock (e.g. a keybinding) landing
+            well before `lockTimeout`, so outputs still blank promptly rather
+            then waiting out the full timeout a second time.
+          '';
+        };
+
+        extraArgs = mkOption {
+          type = types.listOf types.str;
+          default = [];
+          example = ["-log-level" "debug"];
+          description = "Extra arguments passed to levee when swayidle invokes it.";
+        };
+      };
+    };
+
     path = mkOption {
       type = types.str;
       default = lib.concatStringsSep ":" [
@@ -260,6 +331,15 @@ in {
           null.
         '';
       }
+      {
+        assertion = !cfg.levee.idle.enable || cfg.levee.enable;
+        message = ''
+          programs.river-delta.levee.idle.enable requires
+          programs.river-delta.levee.enable, otherwise swayidle would invoke
+          a levee binary that isn't installed system-wide and has no PAM
+          service registered, so it could never actually authenticate.
+        '';
+      }
     ];
 
     programs.river-delta.sessionScript = sessionScript;
@@ -267,7 +347,10 @@ in {
     environment.systemPackages =
       [cfg.package cfg.windowManager.package]
       ++ lib.optional cfg.kanshi.enable cfg.kanshi.package
+      ++ lib.optional cfg.levee.enable cfg.levee.package
       ++ cfg.extraPackages;
+
+    security.pam.services.levee = mkIf cfg.levee.enable {};
 
     programs.xwayland.enable = cfg.xwayland.enable;
 
@@ -312,6 +395,22 @@ in {
       after = ["graphical-session-pre.target"];
       partOf = ["graphical-session.target"];
       wantedBy = ["graphical-session.target"];
+    };
+
+    systemd.user.services.swayidle = mkIf cfg.levee.idle.enable {
+      description = "Idle manager for Wayland, locking via levee";
+      partOf = ["graphical-session.target"];
+      after = ["graphical-session.target"];
+      wantedBy = ["graphical-session.target"];
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${cfg.levee.idle.package}/bin/swayidle -w -C ${swayidleConfig}";
+        Restart = "always";
+        RestartSec = 1;
+        Slice = "session.slice";
+        KillMode = "process";
+      };
+      unitConfig.StartLimitIntervalSec = 0;
     };
 
     systemd.user.services.kanshi = mkIf cfg.kanshi.enable {
