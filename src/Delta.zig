@@ -202,7 +202,10 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |workspace| workspace.maybeDestroy();
     }
 
-    delta.locked_applied = delta.locked;
+    if (delta.locked_applied != delta.locked) {
+        delta.setDesktopShown(delta.locked);
+        delta.locked_applied = delta.locked;
+    }
     delta.syncLayerShellDefault();
     delta.publish();
     delta.obj.manageFinish();
@@ -214,7 +217,12 @@ fn manageStart(delta: *Delta) void {
 }
 
 pub fn toggleShowDesktop(delta: *Delta) void {
-    delta.desktop_shown = !delta.desktop_shown;
+    delta.setDesktopShown(!delta.desktop_shown);
+}
+
+pub fn setDesktopShown(delta: *Delta, shown: bool) void {
+    if (delta.desktop_shown == shown) return;
+    delta.desktop_shown = shown;
 
     var it = delta.windows.iterator(.forward);
     while (it.next()) |window| window.setDesktopHidden(delta.desktop_shown);
