@@ -54,8 +54,8 @@ in
     src = fetchFromCodeberg {
       owner = "river";
       repo = "river";
-      rev = "100fd9557e2ff993cc98628b99d53cfe2c56b2d4";
-      hash = "sha256-EiTlXuCWwW6H9NJROWjZ/6I1C5YZu7J7AX6Yzho1ZgA=";
+      rev = "7e15d4985e6b22a338494c609bcbf5bfe583f7a2";
+      hash = "sha256-aw1aZXy7S2atr8L+uFb4yX1lY8OflnVGyVOHIAGoDHs=";
     };
 
     deps = callPackage ./build.zig.zon.nix {};
