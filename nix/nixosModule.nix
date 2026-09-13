@@ -439,7 +439,10 @@ in {
         };
       };
       extraPortals = [pkgs.xdg-desktop-portal-gtk];
-      config.river.default = lib.mkDefault ["gtk" "wlr"];
+      config.river = {
+        default = lib.mkDefault ["gtk" "wlr"];
+        "org.freedesktop.impl.portal.Inhibit" = lib.mkDefault "none";
+      };
     };
   };
 }

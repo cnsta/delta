@@ -32,11 +32,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1789214021,
-        "narHash": "sha256-4Y+Rf8NPtIhfbbQYWcbMU/X20XYfv6AWbFatZ+rQ80s=",
+        "lastModified": 1789290448,
+        "narHash": "sha256-WoUjnqHegSR1modtZgJXqwRz8c+qGxyMTbo1AiZAB+4=",
         "ref": "refs/heads/main",
-        "rev": "5f5f5718902187539296ac33ad775f98787e1a80",
-        "revCount": 29,
+        "rev": "865a915fbc7f54e15faeb41857510cf7cbc952c4",
+        "revCount": 35,
         "type": "git",
         "url": "https://git.cnst.dev/cnst/levee.git"
       },
@@ -93,11 +93,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1789174112,
-        "narHash": "sha256-UdO+mUFgyTW9QsubO+CLNmzZkkkw4aoCq9Jo2APJS5c=",
+        "lastModified": 1789260992,
+        "narHash": "sha256-i1HdDZLt4ZorjbEDbXiOemVxeOp5JIY67DY1TV1f8DQ=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "e81be856ba741783bbb51ef71047907d0e037803",
+        "rev": "9464147b1b5eb692804bc2cc28dcef7d47bdbcb8",
         "type": "github"
       },
       "original": {
