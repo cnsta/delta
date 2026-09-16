@@ -56,6 +56,8 @@ pending_fade: bool = true,
 proposed: geom.Size = geom.Size.zero,
 tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
+border_focus: animation.Fade = .{ .settled = 0 },
+border_color_applied: ?color.Color = null,
 hidden: bool = false,
 resizing: bool = false,
 tiled_informed: bool = false,
@@ -303,7 +305,8 @@ pub fn animating(window: *const Window) bool {
 
     const duration = wm.config.animation.duration;
     if (!window.motion.done(wm.millis(), duration)) return true;
-    return !window.desktop_offset.done(wm.millis(), duration);
+    if (!window.desktop_offset.done(wm.millis(), duration)) return true;
+    return !window.border_focus.done(wm.millis(), duration);
 }
 
 fn syncBounds(window: *Window) void {
@@ -369,7 +372,7 @@ fn apply(window: *Window, p: rules.Placement) void {
     window.slot = p.content;
 
     if (size_changed or origin_moved) {
-        log.debug("apply {s}: {d}x{d}@{d},{d} -> {d}x{d}@{d},{d} size={} origin={}", .{
+        log.info("apply {s}: {d}x{d}@{d},{d} -> {d}x{d}@{d},{d} size={} origin={}", .{
             window.identifier(),
             window.slot.width,
             window.slot.height,
@@ -590,14 +593,29 @@ pub fn focused(window: *const Window) bool {
 
 pub fn syncDecoration(window: *Window) void {
     const is_focused = window.focused();
-    if (window.decorated_focused) |applied| {
-        if (applied == is_focused) return;
-    }
+    const target: f32 = if (is_focused) 1 else 0;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
+    const now = wm.millis();
 
-    const c = if (is_focused)
-        color.hex(wm.config.border.focused)
-    else
-        color.hex(wm.config.border.inactive);
+    if (window.decorated_focused == null) {
+        window.border_focus = .{ .settled = target };
+    } else {
+        window.border_focus.retarget(target, now, duration, wm.config.animation.curve);
+    }
+    window.decorated_focused = is_focused;
+
+    const t = window.border_focus.at(now, duration, wm.config.animation.curve);
+    if (window.border_focus.done(now, duration)) window.border_focus = .{ .settled = target };
+
+    const c = color.lerp(
+        color.hex(wm.config.border.inactive),
+        color.hex(wm.config.border.focused),
+        t,
+    );
+
+    if (window.border_color_applied) |last| {
+        if (color.eql(last, c)) return;
+    }
 
     window.obj.setBorders(
         .{ .top = true, .bottom = true, .left = true, .right = true },
@@ -607,7 +625,7 @@ pub fn syncDecoration(window: *Window) void {
         c.b,
         c.a,
     );
-    window.decorated_focused = is_focused;
+    window.border_color_applied = c;
 }
 
 fn fixedSize(window: *const Window) bool {
