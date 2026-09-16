@@ -30,6 +30,7 @@ link: wl.list.Link,
 focused: ?*Window = null,
 hovered: ?*Window = null,
 interacted: ?*Window = null,
+focus_resync: bool = false,
 warp_to: ?*Window = null,
 
 xkb_bindings: wl.list.Head(XkbBinding, .link),
@@ -168,6 +169,7 @@ pub fn manage(seat: *Seat) void {
     if (wm.locked) {
         seat.endOp();
         seat.interacted = null;
+        seat.focus_resync = false;
         seat.pending.clear();
         seat.repeat_binding = null;
         seat.op_release = false;
@@ -177,11 +179,12 @@ pub fn manage(seat: *Seat) void {
     switch (seat.layer_focus) {
         .exclusive => seat.dropFocus(),
         .non_exclusive => if (seat.interacted) |w| {
-            _ = seat.focus(w);
+            seat.focusInteracted(w);
         } else seat.dropFocus(),
-        .none => _ = seat.focus(seat.interacted),
+        .none => seat.focusInteracted(seat.interacted),
     }
     seat.interacted = null;
+    seat.focus_resync = false;
 
     while (seat.pending.pop()) |action| action.execute(seat);
 
@@ -373,6 +376,11 @@ pub fn dropFocus(seat: *Seat) void {
     seat.focused = null;
     seat.obj.clearFocus();
     wm.ipc_dirty = true;
+}
+
+fn focusInteracted(seat: *Seat, window: ?*Window) void {
+    if (seat.focus_resync) seat.dropFocus();
+    _ = seat.focus(window);
 }
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {
@@ -715,7 +723,10 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
             if (wm.config.input.focus_follows_pointer) seat.interacted = seat.hovered;
         },
         .pointer_leave => seat.hovered = null,
-        .window_interaction => |args| seat.interacted = if (args.window) |w| Window.fromObj(w) else null,
+        .window_interaction => |args| {
+            seat.interacted = if (args.window) |w| Window.fromObj(w) else null;
+            seat.focus_resync = true;
+        },
         .op_delta => |args| {
             seat.op_dx = args.dx;
             seat.op_dy = args.dy;
