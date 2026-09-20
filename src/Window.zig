@@ -486,6 +486,8 @@ pub fn setFloat(window: *Window, on: bool) void {
 
 pub fn retargetDesktopOffset(window: *Window, target: geom.Point) void {
     const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
+    if (window.desktop_offset.goal().eql(target)) return;
+
     window.desktop_offset.retarget(target, wm.millis(), duration, wm.config.animation.curve);
     wm.dirty = true;
 }

@@ -21,6 +21,8 @@ fds: [4 + Server.max_clients]posix.pollfd,
 last_manage: u64 = 0,
 last_render: u64 = 0,
 last_report: i64 = 0,
+wakeups: u64 = 0,
+timeouts: u64 = 0,
 
 const wayland_fd = 0;
 const signal_fd = 1;
@@ -84,20 +86,27 @@ pub fn run(loop: *Loop) !void {
         if (loop.display.flush() != .SUCCESS) return loop.lost(.read_prepared);
         if (wm.server) |*server| server.fill(loop.fds[ipc_fds..]);
 
-        _ = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
+        const ready = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
             return err;
         };
+
+        loop.wakeups += 1;
+        if (ready == 0) loop.timeouts += 1;
 
         wm.tickClock();
 
         const report_now = wm.millis();
         if (report_now - loop.last_report >= 1000) {
-            log.debug("{d} manage/s, {d} render/s", .{
+            log.debug("{d} wakeups/s ({d} timer), {d} manage/s, {d} render/s", .{
+                loop.wakeups,
+                loop.timeouts,
                 wm.manage_count - loop.last_manage,
                 wm.render_count - loop.last_render,
             });
 
+            loop.wakeups = 0;
+            loop.timeouts = 0;
             loop.last_manage = wm.manage_count;
             loop.last_render = wm.render_count;
             loop.last_report = report_now;

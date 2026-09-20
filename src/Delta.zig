@@ -73,6 +73,7 @@ dirty: bool = false,
 now: i64 = 0,
 desktop_shown: bool = false,
 next_frame: i64 = 0,
+animating_since: ?i64 = null,
 last_anim_report: i64 = 0,
 
 manage_count: u64 = 0,
@@ -80,6 +81,7 @@ render_count: u64 = 0,
 
 pub const stop_timeout_ms = 1000;
 pub const reload_debounce_ms = 50;
+pub const stuck_animation_ms = 5000;
 
 pub fn init(
     gpa: std.mem.Allocator,
@@ -425,18 +427,48 @@ fn frameInterval(delta: *Delta) i64 {
     return @max(1, @divTrunc(1_000_000, @as(i64, fastest)));
 }
 
-fn animating(delta: *Delta) bool {
-    if (!delta.config.animation.enabled) return false;
+const Cause = union(enum) {
+    none,
+    motion: *Window,
+    fade: *Window,
+    workspace: *Workspace,
+};
+
+fn animationCause(delta: *Delta) Cause {
+    if (!delta.config.animation.enabled) return .none;
 
     var win_it = delta.windows.iterator(.forward);
     while (win_it.next()) |window| {
-        if (window.animating() or window.fading()) return true;
+        if (window.animating()) return .{ .motion = window };
+        if (window.fading()) return .{ .fade = window };
     }
     var ws_it = delta.workspaces.iterator(.forward);
     while (ws_it.next()) |ws| {
-        if (ws.animating()) return true;
+        if (ws.animating()) return .{ .workspace = ws };
     }
-    return false;
+    return .none;
+}
+
+fn animating(delta: *Delta) bool {
+    return delta.animationCause() != .none;
+}
+
+fn reportStuckAnimation(delta: *Delta, cause: Cause, now: i64) void {
+    const since = delta.animating_since orelse {
+        delta.animating_since = now;
+        return;
+    };
+    if (now - since < stuck_animation_ms) return;
+    if (now - delta.last_anim_report < stuck_animation_ms) return;
+    delta.last_anim_report = now;
+
+    const secs = @divTrunc(now - since, 1000);
+    switch (cause) {
+        .none => {},
+        .motion => |w| log.warn("animation active for {d}s, held by window {s} (motion/desktop_offset/border_focus)", .{ secs, w.identifier() }),
+        .fade => |w| log.warn("animation active for {d}s, held by window {s} (fade, pending_fade={})", .{ secs, w.identifier(), w.pending_fade }),
+        .workspace => |ws| log.warn("animation active for {d}s, held by workspace {d} (slide offset)", .{ secs, ws.id }),
+    }
 }
 
 pub fn pollTimeout(delta: *Delta) i32 {
@@ -487,13 +519,16 @@ pub fn tick(delta: *Delta) void {
     var it = list.safeIterator(Seat, .link, &delta.seats);
     while (it.next()) |seat| seat.tick(now);
 
-    if (delta.animating()) {
+    const cause = delta.animationCause();
+    if (cause != .none) {
+        delta.reportStuckAnimation(cause, delta.now);
         if (delta.now >= delta.next_frame) {
             delta.next_frame = delta.now + delta.frameInterval();
             delta.dirty = true;
         }
     } else {
         delta.next_frame = 0;
+        delta.animating_since = null;
     }
 }
 
