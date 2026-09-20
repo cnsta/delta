@@ -69,8 +69,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
         },
 
         .action => |action| {
-            // TODO: multi-seat
-            const seat = wm.seats.first() orelse {
+            const seat = wm.activeSeat() orelse {
                 return try stringify(arena, protocol.Reply{ .err = "no seat" });
             };
 
