@@ -41,6 +41,7 @@ locked_applied: ?bool = null,
 outputs: wl.list.Head(Output, .link),
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
+active_seat: ?*Seat = null,
 workspaces: wl.list.Head(Workspace, .link),
 
 child_env: std.process.Environ.Map,
@@ -243,8 +244,26 @@ fn publishShowDesktop(delta: *Delta) void {
     server.publish(line);
 }
 
+pub fn activeSeat(delta: *Delta) ?*Seat {
+    return delta.active_seat orelse delta.seats.first();
+}
+
+pub fn seatFor(delta: *Delta, ws: *Workspace) ?*Seat {
+    const active = delta.activeSeat();
+    if (active) |seat| {
+        if (seat.workspace() == ws) return seat;
+    }
+
+    var it = delta.seats.iterator(.forward);
+    while (it.next()) |seat| {
+        if (seat.workspace() == ws) return seat;
+    }
+
+    return active;
+}
+
 fn syncLayerShellDefault(delta: *Delta) void {
-    const seat = delta.seats.first() orelse return;
+    const seat = delta.activeSeat() orelse return;
     const output = seat.output orelse return;
     if (delta.default_output == output) return;
 
