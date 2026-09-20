@@ -708,7 +708,8 @@ pub fn manage(window: *Window) void {
 }
 
 fn syncNewFocus(window: *Window, applied: Config.Resolved) void {
-    const seat = wm.seats.first() orelse return;
+    const ws = window.workspace orelse return;
+    const seat = wm.seatFor(ws) orelse return;
 
     if (!(applied.focused orelse wm.config.input.focus_new_windows)) {
         const previous = seat.focused orelse return;
