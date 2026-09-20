@@ -143,13 +143,12 @@ fn transformName(transform: wl.Output.Transform) []const u8 {
     };
 }
 
-/// TODO: multi-seat
 fn focusedWorkspace() ?*Workspace {
-    const seat = wm.seats.first() orelse return null;
+    const seat = wm.activeSeat() orelse return null;
     return seat.workspace();
 }
 
 fn focusedOutput() ?*Output {
-    const seat = wm.seats.first() orelse return null;
+    const seat = wm.activeSeat() orelse return null;
     return seat.output;
 }
