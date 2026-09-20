@@ -6,6 +6,7 @@ const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
+const seatpick = @import("util/seatpick.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
 const animation = @import("util/animation.zig");
@@ -59,9 +60,8 @@ pub fn firstUnmapped() *Workspace {
     return getOrCreate(id);
 }
 
-/// TODO: multi-seat
 pub fn forNewWindow() *Workspace {
-    if (wm.seats.first()) |seat| {
+    if (wm.activeSeat()) |seat| {
         if (seat.output) |output| return output.workspace;
     }
     if (wm.outputs.first()) |output| return output.workspace;
@@ -150,16 +150,21 @@ pub fn origin(ws: *const Workspace) ?geom.Point {
     return .{ .x = output.x + off.x, .y = output.y + off.y };
 }
 
-/// TODO: multi-seat
 pub fn cursor(ws: *Workspace) ?geom.Point {
-    const seat = wm.seats.first() orelse return null;
-    if (!seat.pointer_known) return null;
+    const output = ws.output orelse ws.last_output orelse return null;
     const topleft = ws.origin() orelse return null;
+    const bounds = output.rect();
 
-    return .{
-        .x = seat.pointer.x - topleft.x,
-        .y = seat.pointer.y - topleft.y,
-    };
+    if (wm.activeSeat()) |seat| {
+        if (seatpick.pointerWithin(seat.pointer_known, seat.pointer, bounds, topleft)) |p| return p;
+    }
+
+    var it = wm.seats.iterator(.forward);
+    while (it.next()) |seat| {
+        if (seatpick.pointerWithin(seat.pointer_known, seat.pointer, bounds, topleft)) |p| return p;
+    }
+
+    return null;
 }
 
 pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*Window {
