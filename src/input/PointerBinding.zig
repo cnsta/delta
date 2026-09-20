@@ -66,8 +66,11 @@ pub fn destroy(binding: *PointerBinding) void {
 
 fn listener(_: *river.PointerBindingV1, event: river.PointerBindingV1.Event, binding: *PointerBinding) void {
     switch (event) {
-        .pressed => if (!binding.seat.pending.push(binding.action)) {
-            log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
+        .pressed => {
+            binding.seat.markActive();
+            if (!binding.seat.pending.push(binding.action)) {
+                log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
+            }
         },
 
         .released => {},
