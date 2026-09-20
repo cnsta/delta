@@ -9,6 +9,7 @@ const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
+const seatpick = @import("util/seatpick.zig");
 
 const Action = @import("input/action.zig").Action;
 const Eddy = @import("layouts/Eddy.zig");
@@ -97,9 +98,19 @@ pub fn maybeDestroy(seat: *Seat) void {
 
     if (seat.shell) |shell| shell.destroy();
 
+    if (wm.active_seat == seat) wm.active_seat = null;
+
     seat.obj.destroy();
     seat.link.remove();
     wm.gpa.destroy(seat);
+}
+
+pub fn markActive(seat: *Seat) void {
+    if (seat.removed) return;
+    if (wm.active_seat == seat) return;
+
+    wm.active_seat = seat;
+    wm.ipc_dirty = true;
 }
 
 pub fn forgetWindow(seat: *Seat, window: *Window) void {
@@ -131,6 +142,16 @@ pub fn workspace(seat: *Seat) ?*Workspace {
     }
     const o = seat.output orelse return null;
     return o.workspace;
+}
+
+fn focusState(seat: *const Seat) seatpick.Focus {
+    const window = seat.focused orelse return .none;
+    const ws = window.workspace;
+    return seatpick.classifyFocus(true, ws != null, if (ws) |w| w.output != null else false);
+}
+
+fn revalidateFocus(seat: *Seat) void {
+    if (seat.focusState() == .stale) seat.dropFocus();
 }
 
 fn updateOutput(seat: *Seat) void {
@@ -175,6 +196,8 @@ pub fn manage(seat: *Seat) void {
         seat.op_release = false;
         return;
     }
+
+    seat.revalidateFocus();
 
     switch (seat.layer_focus) {
         .exclusive => seat.dropFocus(),
@@ -333,6 +356,8 @@ pub fn tick(seat: *Seat, now: i64) void {
 
 pub fn focus(seat: *Seat, window: ?*Window) bool {
     const target = window orelse blk: {
+        if (!seatpick.mayFallBack(seat.focusState())) return false;
+
         const ws = seat.workspace() orelse break :blk null;
         break :blk ws.windows.last();
     };
@@ -724,6 +749,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         },
         .pointer_leave => seat.hovered = null,
         .window_interaction => |args| {
+            seat.markActive();
             seat.interacted = if (args.window) |w| Window.fromObj(w) else null;
             seat.focus_resync = true;
         },
@@ -733,6 +759,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         },
         .op_release => seat.op_release = true,
         .pointer_position => |args| {
+            seat.markActive();
             seat.pointer = .{ .x = args.x, .y = args.y };
             seat.pointer_known = true;
         },
