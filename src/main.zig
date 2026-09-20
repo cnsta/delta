@@ -53,6 +53,7 @@ test {
     _ = @import("util/geom.zig");
     _ = @import("util/glob.zig");
     _ = @import("util/list.zig");
+    _ = @import("util/seatpick.zig");
     _ = @import("util/string.zig");
     _ = @import("util/syscall.zig");
     _ = @import("layouts/Eddy.zig");
