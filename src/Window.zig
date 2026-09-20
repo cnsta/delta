@@ -372,7 +372,7 @@ fn apply(window: *Window, p: rules.Placement) void {
     window.slot = p.content;
 
     if (size_changed or origin_moved) {
-        log.info("apply {s}: {d}x{d}@{d},{d} -> {d}x{d}@{d},{d} size={} origin={}", .{
+        log.debug("apply {s}: {d}x{d}@{d},{d} -> {d}x{d}@{d},{d} size={} origin={}", .{
             window.identifier(),
             window.slot.width,
             window.slot.height,
