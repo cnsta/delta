@@ -374,15 +374,15 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
 
     if (target) |w| {
         seat.obj.focusWindow(w.obj);
-        w.node.placeTop();
-        if (w.workspace) |ws| ws.raiseFloat();
 
         w.link.remove();
         wm.windows.append(w);
 
+        w.node.placeTop();
         if (w.workspace) |ws| {
             w.workspace_link.remove();
             ws.windows.append(w);
+            ws.raiseFloat();
         }
 
         w.focus_count += 1;
@@ -647,6 +647,7 @@ fn setupBindings(seat: *Seat) void {
 
 pub fn reloadBindings(seat: *Seat) void {
     seat.repeat_binding = null;
+    seat.pending.clear();
 
     while (seat.xkb_bindings.first()) |binding| binding.destroy();
     while (seat.pointer_bindings.first()) |binding| binding.destroy();

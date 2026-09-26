@@ -32,7 +32,6 @@ workspace_link: wl.list.Link,
 
 new: bool = true,
 closed: bool = false,
-raised: bool = false,
 
 workspace: ?*Workspace = null,
 parent: ?*Window = null,
@@ -443,20 +442,6 @@ fn syncFullscreen(window: *Window) void {
     window.fullscreen_applied = window.fullscreen;
 }
 
-pub fn raiseFloat(ws: *Workspace) void {
-    var it = ws.windows.iterator(.forward);
-    while (it.next()) |window| {
-        if (!window.float or !window.visible()) continue;
-        if (window.raised) continue;
-
-        window.node.placeTop();
-
-        var others = ws.windows.iterator(.forward);
-        while (others.next()) |other| other.raised = false;
-        window.raised = true;
-    }
-}
-
 pub fn toggleFloat(window: *Window) void {
     window.setFloat(!window.float);
 }
@@ -658,7 +643,7 @@ pub fn manage(window: *Window) void {
         const applied = wm.config.resolve(.{
             .app_id = window.app_id,
             .title = window.title,
-            .dialog = window.parent != null,
+            .dialog = window.isDialog(),
         });
 
         window.setWorkspace(if (applied.workspace) |id|
@@ -666,7 +651,7 @@ pub fn manage(window: *Window) void {
         else
             window.initialWorkspace());
 
-        if (applied.float orelse (window.parent != null)) window.setFloat(true);
+        if (applied.float orelse window.isDialog()) window.setFloat(true);
         if (applied.fullscreen orelse false) window.toggleFullscreen();
 
         window.syncNewFocus(applied);
@@ -675,7 +660,7 @@ pub fn manage(window: *Window) void {
             window.identifier(),
             window.app_id,
             window.title,
-            window.parent != null,
+            window.isDialog(),
             window.limits.min.width,
             window.limits.min.height,
             window.limits.max.width,
