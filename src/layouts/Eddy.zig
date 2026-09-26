@@ -39,6 +39,41 @@ pub fn isEmpty(layout: *const Eddy) bool {
     return layout.root == null;
 }
 
+pub fn contains(layout: *const Eddy, window: *const Window) bool {
+    const root = layout.root orelse return false;
+
+    var branch = window.branch orelse return switch (root) {
+        .window => |w| w == window,
+        .branch => false,
+    };
+    while (branch.parent) |up| branch = up;
+
+    return switch (root) {
+        .window => false,
+        .branch => |b| b == branch,
+    };
+}
+
+/// Calls `visit(context, window)` for every leaf, left to right.
+pub fn eachWindow(
+    layout: *const Eddy,
+    context: anytype,
+    comptime visit: fn (@TypeOf(context), *Window) void,
+) void {
+    const root = layout.root orelse return;
+    walk(root, context, visit);
+}
+
+fn walk(node: Node, context: anytype, comptime visit: fn (@TypeOf(context), *Window) void) void {
+    switch (node) {
+        .window => |w| visit(context, w),
+        .branch => |b| {
+            walk(b.children[0], context, visit);
+            walk(b.children[1], context, visit);
+        },
+    }
+}
+
 pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
     var node = layout.root orelse return null;
     while (true) {
@@ -86,7 +121,11 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
         return;
     };
 
-    const target = near orelse firstWindow(root);
+    // A near window outside the tree (a float) must not be split onto:
+    // with no parent it looks like the root and would replace the tree.
+    const member = if (near) |n| (if (layout.contains(n)) n else null) else null;
+    const pointed = if (cursor) |c| layout.windowAt(c) else null;
+    const target = member orelse pointed orelse firstWindow(root);
     if (target == window) return;
 
     const box = if (target.slot.width > 0) target.slot else layout.area;
@@ -138,14 +177,10 @@ fn splitOnto(layout: *Eddy, window: *Window, target: *Window, split: Split, befo
 }
 
 pub fn remove(layout: *Eddy, window: *Window) void {
+    if (!layout.contains(window)) return;
+
     const parent = window.branch orelse {
-        // No parent means it is either the root or not in this tree at all.
-        if (layout.root) |root| switch (root) {
-            .window => |w| if (w == window) {
-                layout.root = null;
-            },
-            .branch => {},
-        };
+        layout.root = null;
         return;
     };
 
@@ -177,6 +212,7 @@ pub fn toggleSplit(window: *Window) bool {
 
 pub fn swap(layout: *Eddy, a: *Window, b: *Window) void {
     if (a == b) return;
+    if (!layout.contains(a) or !layout.contains(b)) return;
 
     const pa = a.branch;
     const pb = b.branch;
@@ -207,6 +243,7 @@ pub fn dropOnto(
 ) void {
     if (window == target) return;
     if (tile.width == 0 or tile.height == 0) return;
+    if (!layout.contains(window) or !layout.contains(target)) return;
 
     const zone = dropZone(tile, point) orelse {
         layout.swap(window, target);
@@ -655,4 +692,157 @@ test "resize: dragging right always grows the left/top child and shrinks the rig
     root.ratio = 0.5;
     resize(&right, -100, 0);
     try std.testing.expect(root.ratio < 0.5);
+}
+
+fn testWindow() Window {
+    var w: Window = undefined;
+    w.branch = null;
+    w.slot = geom.Rect.zero;
+    w.limits = .{};
+    return w;
+}
+
+fn testFree(layout: *Eddy) void {
+    while (layout.root) |root| switch (root) {
+        .window => |w| layout.remove(w),
+        .branch => |b| layout.remove(firstWindow(.{ .branch = b })),
+    };
+}
+
+fn countLeaf(count: *usize, _: *Window) void {
+    count.* += 1;
+}
+
+fn leafCount(layout: *const Eddy) usize {
+    var count: usize = 0;
+    layout.eachWindow(&count, countLeaf);
+    return count;
+}
+
+test "contains tells the root window apart from a window outside the tree" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var other: Eddy = .{};
+    var a = testWindow();
+    var b = testWindow();
+    var float = testWindow();
+    var stranger = testWindow();
+    var stranger2 = testWindow();
+
+    layout.insert(&a, null, null);
+    try std.testing.expect(layout.contains(&a));
+    try std.testing.expect(!layout.contains(&float));
+
+    layout.insert(&b, &a, null);
+    other.insert(&stranger, null, null);
+    other.insert(&stranger2, &stranger, null);
+    defer testFree(&layout);
+    defer testFree(&other);
+
+    try std.testing.expect(layout.contains(&a));
+    try std.testing.expect(layout.contains(&b));
+    try std.testing.expect(!layout.contains(&float));
+    try std.testing.expect(!layout.contains(&stranger));
+    try std.testing.expect(!other.contains(&a));
+}
+
+test "inserting next to a float keeps the tiled windows in the tree" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+    var float = testWindow();
+    var new = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    layout.insert(&c, &b, null);
+    defer testFree(&layout);
+
+    const old_root = layout.root.?.branch;
+
+    // The float is the most recently focused window, so it is what
+    // setWorkspace used to pass as `near`.
+    layout.insert(&new, &float, null);
+
+    try std.testing.expectEqual(@as(usize, 4), leafCount(&layout));
+    try std.testing.expect(layout.contains(&a));
+    try std.testing.expect(layout.contains(&b));
+    try std.testing.expect(layout.contains(&c));
+    try std.testing.expect(layout.contains(&new));
+    try std.testing.expect(!layout.contains(&float));
+    try std.testing.expect(float.branch == null);
+
+    // The new leaf went under the old tree, not above a fresh root.
+    try std.testing.expectEqual(old_root, layout.root.?.branch);
+}
+
+test "a lone root window stays in the tree when a float is near" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a = testWindow();
+    var float = testWindow();
+    var new = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.insert(&new, &float, null);
+    defer testFree(&layout);
+
+    try std.testing.expectEqual(@as(usize, 2), leafCount(&layout));
+    try std.testing.expect(layout.contains(&a));
+    try std.testing.expect(!layout.contains(&float));
+}
+
+test "swapping with a window outside the tree changes nothing" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var a = testWindow();
+    var b = testWindow();
+    var float = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    defer testFree(&layout);
+
+    const root = layout.root.?.branch;
+
+    layout.swap(&a, &float);
+    layout.swap(&float, &b);
+
+    try std.testing.expectEqual(root, layout.root.?.branch);
+    try std.testing.expectEqual(&a, root.children[0].window);
+    try std.testing.expectEqual(&b, root.children[1].window);
+    try std.testing.expect(float.branch == null);
+}
+
+test "removing a window outside the tree changes nothing" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{};
+    var other: Eddy = .{};
+    var a = testWindow();
+    var b = testWindow();
+    var float = testWindow();
+    var x = testWindow();
+    var y = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.remove(&float);
+    try std.testing.expect(layout.contains(&a));
+
+    layout.insert(&b, &a, null);
+    other.insert(&x, null, null);
+    other.insert(&y, &x, null);
+    defer testFree(&layout);
+    defer testFree(&other);
+
+    // y has a branch, but it is another tree's.
+    layout.remove(&y);
+    try std.testing.expectEqual(@as(usize, 2), leafCount(&layout));
+    try std.testing.expectEqual(@as(usize, 2), leafCount(&other));
 }
