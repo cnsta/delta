@@ -75,7 +75,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
                     return try stringify(arena, protocol.Reply{ .err = "spawn needs a command" });
                 }
                 if (!wm.desktop_shown) spawn(action.spawn);
-                return try stringify(arena, protocol.Reply.ok);
+                return try stringify(arena, protocol.Reply{ .ok = {} });
             }
 
             const seat = wm.activeSeat() orelse {
@@ -87,7 +87,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
             }
             wm.dirty = true;
 
-            return try stringify(arena, protocol.Reply.ok);
+            return try stringify(arena, protocol.Reply{ .ok = {} });
         },
 
         .event_stream => {
@@ -97,7 +97,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
             wm.ipc_dirty = true;
             wm.dirty = true;
 
-            return try stringify(arena, protocol.Reply.ok);
+            return try stringify(arena, protocol.Reply{ .ok = {} });
         },
     }
 }
