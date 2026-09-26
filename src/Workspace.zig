@@ -17,6 +17,8 @@ const Window = @import("Window.zig");
 
 const Workspace = @This();
 
+const log = std.log.scoped(.workspace);
+
 id: Id,
 link: wl.list.Link,
 
@@ -96,12 +98,49 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
 }
 
 pub fn arrange(ws: *Workspace, area: geom.Rect) void {
+    ws.repairLayout();
     ws.layout.arrange(area);
 
     var it = ws.windows.iterator(.forward);
     while (it.next()) |window| {
         if (window.float) window.applyFloat(area);
     }
+}
+
+fn repairLayout(ws: *Workspace) void {
+    while (ws.strayLeaf()) |window| {
+        log.err("layout repair: removing {s} from workspace {d} (float={}, elsewhere={})", .{
+            window.identifier(),
+            ws.id,
+            window.float,
+            window.workspace != ws,
+        });
+        ws.layout.remove(window);
+    }
+
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.float or ws.layout.contains(window)) continue;
+
+        log.err("layout repair: {s} was missing from workspace {d}", .{ window.identifier(), ws.id });
+        ws.layout.insert(window, null, null);
+    }
+}
+
+fn strayLeaf(ws: *Workspace) ?*Window {
+    const Search = struct {
+        ws: *Workspace,
+        found: ?*Window = null,
+
+        fn visit(search: *@This(), window: *Window) void {
+            if (search.found != null) return;
+            if (window.float or window.workspace != search.ws) search.found = window;
+        }
+    };
+
+    var search: Search = .{ .ws = ws };
+    ws.layout.eachWindow(&search, Search.visit);
+    return search.found;
 }
 
 pub fn raiseFloat(ws: *Workspace) void {
