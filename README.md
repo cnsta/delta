@@ -17,11 +17,13 @@ code and building something for yourself is more advisible.
 
 **Works:** bsp-ish tiling, workspaces, floating windows, fullscreen, keyboard
 and pointer resize, directional focus, key repeat, pointer warping, layer shell
-(bars, launchers, lock screens), window rules, live config reload, an IPC, basic
+(bars, launchers, lock screens), window rules, live config reload, an IPC with a
+CLI (`delctl`, which can also trigger any keybinding action), multi-seat, basic
 animations.
 
-**Missing:** Multi-seat beyond the obvious cases, rules that re-evaluate when a
-window renames itself. General hardening, optimization, and time.
+**Missing:** rules that re-evaluate when a window renames itself. Multi-seat is
+untested with more than one real seat. General hardening, optimization, and
+time.
 
 **Notes:** I have only tested this on NixOS and I have no immediate plans to
 change this fact. There is a functioning
@@ -93,8 +95,24 @@ options, everything has a default and anything omitted keeps it.
 }
 ```
 
+A window counts as a `.dialog` if it has a parent or a fixed size. Dialogs float
+by default, and floating windows always stack above tiled ones.
+
 ZON rather than a bespoke format: no parser to write, no dependency to add, type
 and field errors for free, and it generates cleanly from Nix.
+
+## delctl
+
+`delctl` queries and drives a running delta over its IPC socket:
+
+```
+delctl windows                      # also: outputs, workspaces, layers, focused, watch
+delctl action focus_workspace 3
+delctl action spawn foot -e htop
+delctl action                       # list every action and its arguments
+```
+
+`--json` prints delta's raw reply instead of a table.
 
 ## Design
 
