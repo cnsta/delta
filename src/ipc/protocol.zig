@@ -119,6 +119,18 @@ test "a request round-trips through JSON" {
     try std.testing.expectEqual(@as(u32, 3), parsed.value.action.focus_workspace);
 }
 
+test "an ok reply round-trips through JSON" {
+    const gpa = std.testing.allocator;
+
+    const text = try std.json.Stringify.valueAlloc(gpa, Reply{ .ok = {} }, .{});
+    defer gpa.free(text);
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+
+    try std.testing.expect(parsed.value == .ok);
+}
+
 test "a reply serialises to one line" {
     const gpa = std.testing.allocator;
 
