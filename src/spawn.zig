@@ -25,8 +25,6 @@ pub fn spawn(argv: []const []const u8) void {
         return;
     }
 
-    log.info("spawning {s}", .{argv[0]});
-
     const rc = posix.system.fork();
     switch (posix.errno(rc)) {
         .SUCCESS => {},
@@ -36,7 +34,12 @@ pub fn spawn(argv: []const []const u8) void {
         },
     }
 
-    if (rc != 0) return; // parent
+    if (rc != 0) {
+        // The pid lets a window's `mapped … pid=` debug line be traced back
+        // to the spawn that produced it.
+        log.info("spawning {s} (pid {d})", .{ argv[0], rc });
+        return;
+    }
     _ = std.c.setsid();
     var empty = posix.sigemptyset();
     _ = posix.system.sigprocmask(posix.SIG.SETMASK, &empty, null);
