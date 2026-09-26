@@ -4,6 +4,7 @@ const linux = std.os.linux;
 const posix = std.posix;
 
 const protocol = @import("ipc/protocol.zig");
+const Action = @import("input/action.zig").Action;
 const syscall = @import("util/syscall.zig");
 
 const version = @import("cli.zig").version;
@@ -19,6 +20,8 @@ const usage =
     \\  focused      the focused window, if any
     \\  version      delta's version
     \\  watch        follow state changes until interrupted
+    \\  action <name> [args]
+    \\               run a keybinding action; `delctl action` lists them
     \\
     \\options:
     \\  --json       print delta's reply verbatim instead of a table
@@ -36,9 +39,15 @@ pub fn main(init: std.process.Init) !void {
 
     var json = false;
     var command: ?[]const u8 = null;
+    var action_args: []const []const u8 = &.{};
 
-    for (args[1..]) |arg| {
-        if (std.mem.eql(u8, arg, "--json")) {
+    for (args[1..], 1..) |arg, i| {
+        if (command != null and std.mem.eql(u8, command.?, "action")) {
+            // The rest belongs to the action, flags included, so that
+            // `delctl action spawn foot -e htop` means what it says.
+            action_args = args[i..];
+            break;
+        } else if (std.mem.eql(u8, arg, "--json")) {
             json = true;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             try write(1, usage);
@@ -56,11 +65,14 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(2);
     };
 
-    const request = requestFor(cmd) orelse {
-        try write(2, "delctl: unknown command\n\n");
-        try write(2, usage);
-        std.process.exit(2);
-    };
+    const request = if (std.mem.eql(u8, cmd, "action"))
+        try actionRequest(action_args)
+    else
+        requestFor(cmd) orelse {
+            try write(2, "delctl: unknown command\n\n");
+            try write(2, usage);
+            std.process.exit(2);
+        };
 
     var arena_state = std.heap.ArenaAllocator.init(gpa);
     defer arena_state.deinit();
@@ -95,6 +107,26 @@ fn requestFor(cmd: []const u8) ?protocol.Request {
     if (std.mem.eql(u8, cmd, "version")) return .version;
     if (std.mem.eql(u8, cmd, "watch")) return .event_stream;
     return null;
+}
+
+fn actionRequest(args: []const []const u8) !protocol.Request {
+    if (args.len == 0) {
+        try write(1, "actions:\n" ++ Action.listing);
+        std.process.exit(0);
+    }
+
+    const action = Action.fromArgs(args) catch |err| {
+        try write(2, switch (err) {
+            error.UnknownAction => "delctl: unknown action\n\n",
+            error.MissingArgument => "delctl: missing argument\n\n",
+            error.InvalidArgument => "delctl: invalid argument\n\n",
+            error.TooManyArguments => "delctl: too many arguments\n\n",
+        });
+        try write(2, "actions:\n" ++ Action.listing);
+        std.process.exit(2);
+    };
+
+    return .{ .action = action };
 }
 
 // -- connection ----------------------------------------------------------
