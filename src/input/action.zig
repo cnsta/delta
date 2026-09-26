@@ -53,6 +53,75 @@ pub const Action = union(enum) {
         }
     }
 
+    pub const ParseError = error{
+        UnknownAction,
+        MissingArgument,
+        InvalidArgument,
+        TooManyArguments,
+    };
+
+    pub fn fromArgs(args: []const []const u8) ParseError!Action {
+        if (args.len == 0) return error.MissingArgument;
+
+        const tag = std.meta.stringToEnum(std.meta.Tag(Action), args[0]) orelse
+            return error.UnknownAction;
+        const rest = args[1..];
+
+        switch (tag) {
+            inline else => |t| {
+                const name = @tagName(t);
+                const Payload = @FieldType(Action, name);
+
+                if (Payload == void) {
+                    if (rest.len > 0) return error.TooManyArguments;
+                    return @unionInit(Action, name, {});
+                } else if (Payload == []const []const u8) {
+                    if (rest.len == 0) return error.MissingArgument;
+                    return @unionInit(Action, name, rest);
+                } else {
+                    if (rest.len == 0) return error.MissingArgument;
+                    if (rest.len > 1) return error.TooManyArguments;
+
+                    const value: Payload = switch (@typeInfo(Payload)) {
+                        .@"enum" => std.meta.stringToEnum(Payload, rest[0]) orelse
+                            return error.InvalidArgument,
+                        .int => std.fmt.parseInt(Payload, rest[0], 10) catch
+                            return error.InvalidArgument,
+                        else => @compileError("no command-line form for ." ++ name),
+                    };
+                    return @unionInit(Action, name, value);
+                }
+            },
+        }
+    }
+
+    pub const listing = blk: {
+        var text: []const u8 = "";
+        for (std.meta.fields(Action)) |field| {
+            if (std.mem.eql(u8, field.name, "none")) continue;
+            text = text ++ "  " ++ field.name ++ argHint(field.type) ++ "\n";
+        }
+        break :blk text;
+    };
+
+    fn argHint(comptime T: type) []const u8 {
+        if (T == void) return "";
+        if (T == []const []const u8) return " <command> [args...]";
+
+        return switch (@typeInfo(T)) {
+            .@"enum" => |info| blk: {
+                var hint: []const u8 = " <";
+                for (info.fields, 0..) |field, i| {
+                    if (i > 0) hint = hint ++ "|";
+                    hint = hint ++ field.name;
+                }
+                break :blk hint ++ ">";
+            },
+            .int => " <n>",
+            else => @compileError("no argument hint for " ++ @typeName(T)),
+        };
+    }
+
     pub fn repeats(action: Action) bool {
         return switch (action) {
             .resize, .focus_direction, .focus_next, .move_direction => true,
@@ -151,4 +220,49 @@ test "Queue is reusable after clear" {
     try std.testing.expect(queue.isEmpty());
     try std.testing.expect(queue.push(.focus_next));
     try std.testing.expectEqual(Action.focus_next, queue.pop().?);
+}
+
+test "fromArgs parses every kind of payload" {
+    const expectEqual = std.testing.expectEqual;
+
+    try expectEqual(Action.close, try Action.fromArgs(&.{"close"}));
+    try expectEqual(
+        geom.Direction.left,
+        (try Action.fromArgs(&.{ "focus_direction", "left" })).focus_direction,
+    );
+    try expectEqual(
+        Action.Resize.grow_height,
+        (try Action.fromArgs(&.{ "resize", "grow_height" })).resize,
+    );
+    try expectEqual(
+        @as(Workspace.Id, 7),
+        (try Action.fromArgs(&.{ "send_to_workspace", "7" })).send_to_workspace,
+    );
+
+    // Flags after the command belong to it, not to delctl.
+    const argv = (try Action.fromArgs(&.{ "spawn", "foot", "-e", "htop" })).spawn;
+    try expectEqual(@as(usize, 3), argv.len);
+    try std.testing.expectEqualStrings("-e", argv[1]);
+}
+
+test "fromArgs rejects bad input" {
+    const expectError = std.testing.expectError;
+
+    try expectError(error.MissingArgument, Action.fromArgs(&.{}));
+    try expectError(error.UnknownAction, Action.fromArgs(&.{"toggle_floating"}));
+    try expectError(error.MissingArgument, Action.fromArgs(&.{"focus_workspace"}));
+    try expectError(error.MissingArgument, Action.fromArgs(&.{"spawn"}));
+    try expectError(error.InvalidArgument, Action.fromArgs(&.{ "focus_workspace", "x" }));
+    try expectError(error.InvalidArgument, Action.fromArgs(&.{ "focus_workspace", "-1" }));
+    try expectError(error.InvalidArgument, Action.fromArgs(&.{ "focus_direction", "north" }));
+    try expectError(error.TooManyArguments, Action.fromArgs(&.{ "close", "now" }));
+    try expectError(error.TooManyArguments, Action.fromArgs(&.{ "resize", "grow_width", "2" }));
+}
+
+test "listing covers every action but none" {
+    inline for (std.meta.fields(Action)) |field| {
+        const found = std.mem.indexOf(u8, Action.listing, "  " ++ field.name) != null;
+        try std.testing.expectEqual(!std.mem.eql(u8, field.name, "none"), found);
+    }
+    try std.testing.expect(std.mem.indexOf(u8, Action.listing, "focus_direction <left|") != null);
 }
