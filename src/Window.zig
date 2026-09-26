@@ -167,11 +167,19 @@ pub fn setWorkspace(window: *Window, target: *Workspace) void {
         window.workspace_link.remove();
     }
 
-    const near = target.windows.last();
+    const near = lastTiled(target);
 
     window.workspace = target;
     target.windows.append(window);
-    target.layout.insert(window, near, target.cursor());
+    if (!window.float) target.layout.insert(window, near, target.cursor());
+}
+
+fn lastTiled(ws: *Workspace) ?*Window {
+    var it = ws.windows.iterator(.reverse);
+    while (it.next()) |w| {
+        if (!w.float and ws.layout.contains(w)) return w;
+    }
+    return null;
 }
 
 pub fn placeAt(window: *Window, x: i32, y: i32) void {
@@ -619,9 +627,8 @@ fn fixedSize(window: *const Window) bool {
     const min = window.limits.min;
     const max = window.limits.max;
 
-    if (min.width > 0 and min.width == max.width) return true;
-    if (min.height > 0 and min.height == max.height) return true;
-    return false;
+    return min.width > 0 and min.width == max.width and
+        min.height > 0 and min.height == max.height;
 }
 
 pub fn isDialog(window: *const Window) bool {
@@ -646,18 +653,23 @@ pub fn manage(window: *Window) void {
             .dialog = window.isDialog(),
         });
 
+        window.float = applied.float orelse window.isDialog();
+
         window.setWorkspace(if (applied.workspace) |id|
             Workspace.getOrCreate(id)
         else
             window.initialWorkspace());
 
-        if (applied.float orelse window.isDialog()) window.setFloat(true);
+        if (window.float) {
+            if (window.workspace) |ws| ws.raiseFloat();
+        }
         if (applied.fullscreen orelse false) window.toggleFullscreen();
 
         window.syncNewFocus(applied);
 
-        log.debug("mapped {s} app_id={?s} title={?s} dialog={} min={d}x{d} max={d}x{d}", .{
+        log.debug("mapped {s} pid={?d} app_id={?s} title={?s} dialog={} min={d}x{d} max={d}x{d}", .{
             window.identifier(),
+            window.pid,
             window.app_id,
             window.title,
             window.isDialog(),
@@ -701,7 +713,7 @@ fn syncNewFocus(window: *Window, applied: Config.Resolved) void {
     if (!(applied.focused orelse wm.config.input.focus_new_windows)) {
         const previous = seat.focused orelse return;
         seat.dropFocus();
-        _ = seat.focus(previous);
+        _ = seat.focusNoRaise(previous);
         return;
     }
 
@@ -721,8 +733,12 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
         },
 
         .dimensions => |args| {
+            const waiting = !window.sized() or (window.float and window.float_box.width == 0);
+
             window.width = args.width;
             window.height = args.height;
+
+            if (waiting) wm.dirty = true;
         },
 
         .fullscreen_requested => |args| window.fullscreen_request = .{
