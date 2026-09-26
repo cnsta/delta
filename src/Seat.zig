@@ -355,6 +355,14 @@ pub fn tick(seat: *Seat, now: i64) void {
 // -- focus -------------------------------------------------------------
 
 pub fn focus(seat: *Seat, window: ?*Window) bool {
+    return seat.focusAndMaybeRaise(window, true);
+}
+
+pub fn focusNoRaise(seat: *Seat, window: ?*Window) bool {
+    return seat.focusAndMaybeRaise(window, false);
+}
+
+fn focusAndMaybeRaise(seat: *Seat, window: ?*Window, raise_it: bool) bool {
     const target = window orelse blk: {
         if (!seatpick.mayFallBack(seat.focusState())) return false;
 
@@ -374,17 +382,7 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
 
     if (target) |w| {
         seat.obj.focusWindow(w.obj);
-
-        w.link.remove();
-        wm.windows.append(w);
-
-        w.node.placeTop();
-        if (w.workspace) |ws| {
-            w.workspace_link.remove();
-            ws.windows.append(w);
-            ws.raiseFloat();
-        }
-
+        if (raise_it) raise(w);
         w.focus_count += 1;
     } else {
         seat.obj.clearFocus();
@@ -395,6 +393,19 @@ pub fn focus(seat: *Seat, window: ?*Window) bool {
     return true;
 }
 
+/// `ws.windows` order is raise order: the last window is the topmost.
+fn raise(w: *Window) void {
+    w.link.remove();
+    wm.windows.append(w);
+
+    w.node.placeTop();
+    if (w.workspace) |ws| {
+        w.workspace_link.remove();
+        ws.windows.append(w);
+        ws.raiseFloat();
+    }
+}
+
 pub fn dropFocus(seat: *Seat) void {
     const old = seat.focused orelse return;
     old.focus_count -= 1;
@@ -403,9 +414,14 @@ pub fn dropFocus(seat: *Seat) void {
     wm.ipc_dirty = true;
 }
 
+/// a click or touch raises (and resyncs focus), pointer hover only focuses.
 fn focusInteracted(seat: *Seat, window: ?*Window) void {
-    if (seat.focus_resync) seat.dropFocus();
-    _ = seat.focus(window);
+    if (seat.focus_resync) {
+        seat.dropFocus();
+        _ = seat.focus(window);
+        return;
+    }
+    _ = seat.focusNoRaise(window);
 }
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {
@@ -431,9 +447,12 @@ pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
 
 pub fn moveDirection(seat: *Seat, dir: geom.Direction) void {
     const window = seat.focused orelse return;
+    if (window.float) return;
     const ws = window.workspace orelse return;
 
     const target = ws.windowInDirection(window, dir) orelse return;
+    // floats have no place in the tree to trade.
+    if (target.float) return;
 
     ws.layout.swap(window, target);
     wm.ipc_dirty = true;
