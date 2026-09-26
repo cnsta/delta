@@ -12,10 +12,12 @@
     },
 
     .input = .{
-        .repeat_delay_ms = 400,
-        .repeat_rate_ms = 40,
+        .repeat_delay = 400,
+        .repeat_rate = 40,
         .focus_follows_pointer = true,
         .focus_new_windows = true,
+        // .none, .focus (keyboard focus moves) or .spawn (also new windows).
+        // Switching workspace never moves the pointer.
         .cursor = .{ .warp = .focus },
     },
 
@@ -26,8 +28,8 @@
 
     .animation = .{
         .enabled = true,
-        .duration_ms = 175,
-        .fade_ms = 250,
+        .duration = 175,
+        .fade_duration = 250,
         .curve = .ease_out,
     },
 

@@ -49,9 +49,13 @@ pub const Input = struct {
 pub const Cursor = struct {
     warp: Warp = .focus,
 
+    /// workspace switches never warp, in any mode.
     pub const Warp = enum {
         none,
+        /// warp to the window keyboard focus moves to (directional focus
+        /// and move, the fallback focus after sending a window away).
         focus,
+        /// as `focus`, and also warp to new windows.
         spawn,
     };
 };

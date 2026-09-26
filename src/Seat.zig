@@ -274,15 +274,15 @@ pub fn applyWarp(seat: *Seat) void {
     if (!window.visible()) return;
 
     const ws = window.workspace orelse return;
-    const topleft = ws.origin() orelse return;
+    const output = ws.output orelse return;
 
     if (!warpOnFocus()) {
-        seat.output = ws.output;
+        seat.output = output;
         return;
     }
 
-    const x = topleft.x + window.slot.x + @divTrunc(window.slot.width, 2);
-    const y = topleft.y + window.slot.y + @divTrunc(window.slot.height, 2);
+    const x = output.x + window.slot.x + @divTrunc(window.slot.width, 2);
+    const y = output.y + window.slot.y + @divTrunc(window.slot.height, 2);
     seat.obj.pointerWarp(x, y);
     seat.pointer = .{ .x = x, .y = y };
     seat.pointer_known = true;
@@ -486,7 +486,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
     }
 
     seat.dropFocus();
-    if (seat.focus(target.windows.last())) seat.warpTo(seat.focused);
+    _ = seat.focus(target.windows.last());
 }
 
 pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
