@@ -11,6 +11,7 @@ _delctl() {
     'focused:The focused window, if any'
     "version:delta's version"
     'watch:Follow state changes until interrupted'
+    'action:Run a keybinding action'
   )
 
   _arguments -C \

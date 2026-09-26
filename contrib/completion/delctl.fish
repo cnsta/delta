@@ -11,6 +11,7 @@ complete -c delctl -n __fish_use_subcommand -a layers -d "Inferred bar/exclusion
 complete -c delctl -n __fish_use_subcommand -a focused -d "The focused window, if any"
 complete -c delctl -n __fish_use_subcommand -a version -d "delta's version"
 complete -c delctl -n __fish_use_subcommand -a watch -d "Follow state changes until interrupted"
+complete -c delctl -n __fish_use_subcommand -a action -d "Run a keybinding action"
 
 complete -c delctl -l json -d "Print delta's reply verbatim"
 complete -c delctl -s h -l help -d "Print usage"

@@ -26,6 +26,54 @@ pub const Reply = union(enum) {
     focused_window: ?Window,
     outputs: []const Output,
     layers: []const Layers,
+
+    pub fn jsonStringify(reply: Reply, jws: anytype) !void {
+        switch (reply) {
+            .ok => try jws.write("ok"),
+            inline else => |payload, tag| {
+                try jws.beginObject();
+                try jws.objectField(@tagName(tag));
+                try jws.write(payload);
+                try jws.endObject();
+            },
+        }
+    }
+
+    pub fn jsonParse(
+        gpa: std.mem.Allocator,
+        source: anytype,
+        options: std.json.ParseOptions,
+    ) std.json.ParseError(@TypeOf(source.*))!Reply {
+        if (try source.peekNextTokenType() == .string) {
+            _ = try std.json.innerParse(enum { ok }, gpa, source, options);
+            return .ok;
+        }
+
+        if (try source.next() != .object_begin) return error.UnexpectedToken;
+
+        const name = switch (try source.nextAllocMax(gpa, .alloc_if_needed, options.max_value_len.?)) {
+            inline .string, .allocated_string => |slice| slice,
+            else => return error.UnexpectedToken,
+        };
+
+        const result: Reply = inline for (@typeInfo(Reply).@"union".fields) |field| {
+            if (!std.mem.eql(u8, field.name, name)) {} else if (field.type == void) {
+                if (try source.next() != .object_begin) return error.UnexpectedToken;
+                if (try source.next() != .object_end) return error.UnexpectedToken;
+                break @unionInit(Reply, field.name, {});
+            } else {
+                break @unionInit(Reply, field.name, try std.json.innerParse(
+                    field.type,
+                    gpa,
+                    source,
+                    options,
+                ));
+            }
+        } else return error.UnknownField;
+
+        if (try source.next() != .object_end) return error.UnexpectedToken;
+        return result;
+    }
 };
 
 pub const Window = struct {
@@ -119,16 +167,65 @@ test "a request round-trips through JSON" {
     try std.testing.expectEqual(@as(u32, 3), parsed.value.action.focus_workspace);
 }
 
-test "an ok reply round-trips through JSON" {
+test "an ok reply is the bare string ashell expects" {
     const gpa = std.testing.allocator;
 
     const text = try std.json.Stringify.valueAlloc(gpa, Reply{ .ok = {} }, .{});
     defer gpa.free(text);
+    try std.testing.expectEqualStrings("\"ok\"", text);
 
     const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
     defer parsed.deinit();
-
     try std.testing.expect(parsed.value == .ok);
+
+    const legacy = try std.json.parseFromSlice(Reply, gpa, "{\"ok\":{}}", .{});
+    defer legacy.deinit();
+    try std.testing.expect(legacy.value == .ok);
+}
+
+test "an err reply is a one-key object ashell expects" {
+    const gpa = std.testing.allocator;
+
+    const text = try std.json.Stringify.valueAlloc(gpa, Reply{ .err = "no seat" }, .{});
+    defer gpa.free(text);
+    try std.testing.expectEqualStrings("{\"err\":\"no seat\"}", text);
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+    try std.testing.expectEqualStrings("no seat", parsed.value.err);
+}
+
+test "a payload reply keeps its object form" {
+    const gpa = std.testing.allocator;
+
+    const text = try std.json.Stringify.valueAlloc(gpa, Reply{ .focused_window = null }, .{});
+    defer gpa.free(text);
+    try std.testing.expectEqualStrings("{\"focused_window\":null}", text);
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value.focused_window == null);
+}
+
+test "an unknown reply tag is rejected" {
+    const gpa = std.testing.allocator;
+
+    try std.testing.expectError(
+        error.UnknownField,
+        std.json.parseFromSlice(Reply, gpa, "{\"nope\":1}", .{}),
+    );
+    try std.testing.expectError(
+        error.InvalidEnumTag,
+        std.json.parseFromSlice(Reply, gpa, "\"nope\"", .{}),
+    );
+}
+
+test "ashell's event_stream request parses" {
+    const gpa = std.testing.allocator;
+
+    const parsed = try std.json.parseFromSlice(Request, gpa, "{\"event_stream\":{}}", .{});
+    defer parsed.deinit();
+    try std.testing.expect(parsed.value == .event_stream);
 }
 
 test "a reply serialises to one line" {
