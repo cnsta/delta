@@ -4,6 +4,7 @@ const wayland = @import("wayland");
 const river = wayland.client.river;
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
+const zwlr = wayland.client.zwlr;
 
 const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
@@ -14,6 +15,7 @@ const snapshot = @import("ipc/snapshot.zig");
 const protocol = @import("ipc/protocol.zig");
 
 const Output = @import("Output.zig");
+const OutputHead = @import("OutputHead.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
@@ -36,9 +38,11 @@ layer_shell: ?*river.LayerShellV1,
 compositor: ?*wl.Compositor = null,
 viewporter: ?*wp.Viewporter = null,
 single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
+output_manager: ?*zwlr.OutputManagerV1 = null,
 locked_applied: ?bool = null,
 
 outputs: wl.list.Head(Output, .link),
+heads: wl.list.Head(OutputHead, .link),
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 active_seat: ?*Seat = null,
@@ -121,6 +125,7 @@ pub fn init(
         .single_pixel = single_pixel_obj,
 
         .outputs = undefined,
+        .heads = undefined,
         .windows = undefined,
         .seats = undefined,
         .workspaces = undefined,
@@ -128,6 +133,7 @@ pub fn init(
 
     instance.now = instance.sampleClock();
     instance.outputs.init();
+    instance.heads.init();
     instance.windows.init();
     instance.seats.init();
     instance.workspaces.init();
@@ -360,6 +366,7 @@ pub fn deinit(delta: *Delta) void {
         ws.output = null;
         ws.maybeDestroy();
     }
+    while (delta.heads.first()) |head| head.destroy();
 
     delta.config_arena.deinit();
     delta.child_env.deinit();
