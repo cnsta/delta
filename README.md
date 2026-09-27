@@ -65,7 +65,10 @@ the Vulkan renderer available), and `nixosModules.default`.
       };
     }
 
-The module sets up a systemd user session, an XDG portal, and optionally kanshi.
+The module sets up a systemd user session, an XDG portal, and optionally kanshi
+and `clipboard.persist` (wl-clip-persist, so a copy survives its app exiting).
+Its river build carries a small wlroots patch so Wine and other X11 apps that
+read the clipboard only when it changes still see Wayland copies.
 `programs.river-delta.sessionScript` is the entry point to hand to greetd
 directly, rather than scraping `Exec=` out of a desktop entry.
 

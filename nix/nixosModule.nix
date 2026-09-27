@@ -203,6 +203,26 @@ in {
       };
     };
 
+    clipboard.persist = {
+      enable = mkEnableOption ''
+        wl-clip-persist, which keeps the clipboard's contents after the app
+        that copied them exits (Wayland and Xwayland apps alike). It reads
+        every clipboard entry into its own memory as soon as it is copied
+      '';
+
+      package = mkPackageOption pkgs "wl-clip-persist" {};
+
+      extraArgs = mkOption {
+        type = types.listOf types.str;
+        default = ["--clipboard" "regular"];
+        example = ["--clipboard" "both"];
+        description = ''
+          Arguments passed to wl-clip-persist. `--clipboard both` also keeps
+          the primary (middle-click) selection.
+        '';
+      };
+    };
+
     levee = {
       enable = mkEnableOption "the levee screen locker";
 
@@ -422,6 +442,23 @@ in {
         ExecStart = "${cfg.kanshi.package}/bin/kanshi${kanshiConfigFile}";
         Restart = "always";
 
+        RestartSec = 1;
+        Slice = "session.slice";
+      };
+      unitConfig.StartLimitIntervalSec = 0;
+    };
+
+    systemd.user.services.wl-clip-persist = mkIf cfg.clipboard.persist.enable {
+      description = "Keep the clipboard after its source app exits";
+      partOf = ["graphical-session.target"];
+      after = ["graphical-session.target"];
+      wantedBy = ["graphical-session.target"];
+      serviceConfig = {
+        ExecStart = lib.escapeShellArgs (
+          ["${lib.getExe cfg.clipboard.persist.package}"]
+          ++ cfg.clipboard.persist.extraArgs
+        );
+        Restart = "always";
         RestartSec = 1;
         Slice = "session.slice";
       };

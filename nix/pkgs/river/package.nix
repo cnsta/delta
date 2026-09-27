@@ -44,6 +44,10 @@
     mesonFlags =
       (prev.mesonFlags or [])
       ++ lib.optional vulkanSupport "-Drenderers=gles2,vulkan";
+
+    patches =
+      (prev.patches or [])
+      ++ [./wlroots-xwm-reclaim-selection-on-focus.patch];
   });
 in
   stdenv.mkDerivation (finalAttrs: {
