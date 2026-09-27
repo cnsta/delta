@@ -18,6 +18,10 @@ pub fn mayFallBack(focus: Focus) bool {
     return focus != .valid;
 }
 
+pub fn spawnWarp(rule: ?bool, has_parent: bool, keyboard: bool) bool {
+    return rule orelse (!has_parent and keyboard);
+}
+
 pub fn pointerWithin(known: bool, pointer: geom.Point, output: geom.Rect, origin: geom.Point) ?geom.Point {
     if (!known) return null;
     if (!output.contains(pointer)) return null;
@@ -64,4 +68,22 @@ test "the origin may include an animation offset" {
     const out: geom.Rect = .{ .x = 0, .y = 0, .width = 1000, .height = 1000 };
     const hint = pointerWithin(true, .{ .x = 500, .y = 500 }, out, .{ .x = -200, .y = 0 }).?;
     try std.testing.expect(hint.eql(.{ .x = 700, .y = 500 }));
+}
+
+test "a keybinding-launched top-level window warps" {
+    try std.testing.expect(spawnWarp(null, false, true));
+}
+
+test "a window opened by the pointer does not warp" {
+    try std.testing.expect(!spawnWarp(null, false, false));
+}
+
+test "a child window does not warp" {
+    try std.testing.expect(!spawnWarp(null, true, true));
+    try std.testing.expect(!spawnWarp(null, true, false));
+}
+
+test "a rule overrides the spawn warp heuristic" {
+    try std.testing.expect(spawnWarp(true, true, false));
+    try std.testing.expect(!spawnWarp(false, false, true));
 }

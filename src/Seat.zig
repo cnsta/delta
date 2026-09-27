@@ -33,6 +33,7 @@ hovered: ?*Window = null,
 interacted: ?*Window = null,
 focus_resync: bool = false,
 warp_to: ?*Window = null,
+last_input: Input = .pointer,
 
 xkb_bindings: wl.list.Head(XkbBinding, .link),
 pointer_bindings: wl.list.Head(PointerBinding, .link),
@@ -114,6 +115,7 @@ pub fn markActive(seat: *Seat) void {
 }
 
 pub fn forgetWindow(seat: *Seat, window: *Window) void {
+    if (seat.warp_to == window) seat.warp_to = null;
     if (seat.focused == window) {
         window.focus_count -= 1;
         seat.focused = null;
@@ -268,8 +270,13 @@ fn syncBindings(seat: *Seat, on: bool) void {
 
 pub fn applyWarp(seat: *Seat) void {
     const window = seat.warp_to orelse return;
+
+    if (seat.focused == window and window.visible() and
+        (window.slot.width <= 0 or window.slot.height <= 0)) return;
+
     seat.warp_to = null;
 
+    if (seat.focused != window) return;
     if (seat.op != .none) return;
     if (!window.visible()) return;
 
@@ -423,6 +430,8 @@ fn focusInteracted(seat: *Seat, window: ?*Window) void {
     }
     _ = seat.focusNoRaise(window);
 }
+
+pub const Input = enum { keyboard, pointer };
 
 pub fn warpTo(seat: *Seat, window: ?*Window) void {
     if (window) |w| seat.warp_to = w;
@@ -770,6 +779,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         .pointer_leave => seat.hovered = null,
         .window_interaction => |args| {
             seat.markActive();
+            seat.last_input = .pointer;
             seat.interacted = if (args.window) |w| Window.fromObj(w) else null;
             seat.focus_resync = true;
         },
@@ -780,6 +790,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         .op_release => seat.op_release = true,
         .pointer_position => |args| {
             seat.markActive();
+            seat.last_input = .pointer;
             seat.pointer = .{ .x = args.x, .y = args.y };
             seat.pointer_known = true;
         },

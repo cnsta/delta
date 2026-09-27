@@ -68,6 +68,7 @@ fn listener(_: *river.PointerBindingV1, event: river.PointerBindingV1.Event, bin
     switch (event) {
         .pressed => {
             binding.seat.markActive();
+            binding.seat.last_input = .pointer;
             if (!binding.seat.pending.push(binding.action)) {
                 log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
             }

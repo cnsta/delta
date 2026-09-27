@@ -73,6 +73,7 @@ fn listener(_: *river.XkbBindingV1, event: river.XkbBindingV1.Event, binding: *X
     switch (event) {
         .pressed => {
             binding.seat.markActive();
+            binding.seat.last_input = .keyboard;
             if (!binding.seat.pending.push(binding.action)) {
                 log.warn("dropped {s}, action queue full", .{@tagName(binding.action)});
             }

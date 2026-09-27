@@ -11,6 +11,7 @@ const geom = @import("util/geom.zig");
 const list = @import("util/list.zig");
 const string = @import("util/string.zig");
 const animation = @import("util/animation.zig");
+const seatpick = @import("util/seatpick.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
 const rules = @import("layouts/rules.zig");
@@ -719,7 +720,7 @@ fn syncNewFocus(window: *Window, applied: Config.Resolved) void {
 
     if (!window.visible()) return;
 
-    const warp = applied.warp orelse true;
+    const warp = seatpick.spawnWarp(applied.warp, window.parent != null, seat.last_input == .keyboard);
     if (seat.focus(window) and warp and Seat.warpOnSpawn()) seat.warpTo(window);
 }
 

@@ -16,7 +16,8 @@
         .repeat_rate = 40,
         .focus_follows_pointer = true,
         .focus_new_windows = true,
-        // .none, .focus (keyboard focus moves) or .spawn (also new windows).
+        // .none, .focus (keyboard focus moves) or .spawn (also new windows
+        // launched from a keybinding, never children or click-opened ones).
         // Switching workspace never moves the pointer.
         .cursor = .{ .warp = .focus },
     },
