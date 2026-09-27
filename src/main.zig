@@ -78,7 +78,8 @@ pub fn main(init: std.process.Init) !void {
     std.log.info("PATH={s}", .{init.environ_map.get("PATH") orelse "<unset>"});
 
     var child_env = try init.environ_map.clone(init.gpa);
-    defer child_env.deinit();
+    var env_owned = true;
+    errdefer if (env_owned) child_env.deinit();
     for (child_environment) |pair| try child_env.put(pair[0], pair[1]);
     _ = child_env.swapRemove("NOTIFY_SOCKET");
 
@@ -106,6 +107,7 @@ pub fn main(init: std.process.Init) !void {
 
     const ipc_path = try socketPath(init.gpa, init.environ_map);
     defer if (ipc_path) |p| init.gpa.free(p);
+    if (ipc_path) |path| try child_env.put("DELTA_SOCKET", path);
 
     Delta.init(
         init.gpa,
@@ -125,6 +127,7 @@ pub fn main(init: std.process.Init) !void {
         globals.viewporter,
         globals.single_pixel,
     );
+    env_owned = false;
 
     if (globals.layer_shell == null) {
         std.log.warn("river_layer_shell_v1 unavailable; layer surfaces will be closed", .{});
@@ -132,8 +135,6 @@ pub fn main(init: std.process.Init) !void {
 
     var loop = try Loop.init(display);
     defer loop.deinit();
-
-    if (ipc_path) |path| try child_env.put("DELTA_SOCKET", path);
 
     try loop.run();
     Delta.instance.deinit();
