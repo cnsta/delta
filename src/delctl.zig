@@ -315,7 +315,10 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
         },
 
         .windows => |windows| {
-            for (windows) |window| try renderWindow(arena, w, window);
+            for (windows, 0..) |window, i| {
+                if (i > 0) try w.append(arena, '\n');
+                try renderWindow(arena, w, window);
+            }
         },
 
         .focused_window => |window| {
