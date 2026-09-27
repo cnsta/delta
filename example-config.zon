@@ -19,6 +19,9 @@
         // .none, .focus (keyboard focus moves) or .spawn (also new windows
         // launched from a keybinding, never children or click-opened ones).
         // Switching workspace never moves the pointer.
+        // .theme sets the cursor River draws (over borders, the desktop)
+        // and XCURSOR_THEME/XCURSOR_SIZE for programs delta spawns, e.g.
+        // .cursor = .{ .warp = .focus, .theme = "Adwaita", .size = 24 },
         .cursor = .{ .warp = .focus },
     },
 

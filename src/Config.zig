@@ -49,7 +49,9 @@ pub const Input = struct {
 pub const Cursor = struct {
     warp: Warp = .focus,
 
-    /// workspace switches never warp, in any mode.
+    theme: ?[:0]const u8 = null,
+    size: u32 = 24,
+
     pub const Warp = enum {
         none,
         /// warp to the window keyboard focus moves to (directional focus
@@ -377,6 +379,23 @@ test "a partial config leaves the rest at defaults" {
     try std.testing.expectEqual(Cursor.Warp.none, loaded.config.input.cursor.warp);
     try std.testing.expectEqual(@as(i32, 2), loaded.config.border.width);
     try std.testing.expectEqual(false, loaded.config.animation.enabled);
+    try std.testing.expectEqual(null, loaded.config.input.cursor.theme);
+}
+
+test "a cursor theme parses as a sentinel string" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{ .input = .{ .cursor = .{ .theme = "Bibata-Modern-Ice", .size = 32 } } }
+    , &report)).?;
+    defer loaded.deinit();
+
+    const theme = loaded.config.input.cursor.theme.?;
+    try std.testing.expectEqualStrings("Bibata-Modern-Ice", theme);
+    try std.testing.expectEqual(@as(u8, 0), theme.ptr[theme.len]);
+    try std.testing.expectEqual(@as(u32, 32), loaded.config.input.cursor.size);
 }
 
 test "strings are owned by the arena" {
