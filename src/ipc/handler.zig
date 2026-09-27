@@ -49,8 +49,8 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
         },
 
         .outputs => {
-            const state = try snapshot.build(arena);
-            return try stringify(arena, protocol.Reply{ .outputs = state.outputs });
+            const outputs = try snapshot.outputInfos(arena);
+            return try stringify(arena, protocol.Reply{ .outputs = outputs });
         },
 
         .layers => {

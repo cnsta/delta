@@ -24,7 +24,7 @@ pub const Reply = union(enum) {
     windows: []const WindowInfo,
     workspaces: []const Workspace,
     focused_window: ?WindowInfo,
-    outputs: []const Output,
+    outputs: []const OutputInfo,
     layers: []const Layers,
 
     pub fn jsonStringify(reply: Reply, jws: anytype) !void {
@@ -170,10 +170,46 @@ pub const Output = struct {
     focused: bool,
 };
 
+pub const OutputInfo = struct {
+    name: []const u8,
+    description: ?[]const u8,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    usable: Rect,
+    mode: ?Mode,
+    scale: i32,
+    transform: []const u8,
+    workspace: ?u32,
+    focused: bool,
+
+    enabled: bool = true,
+
+    make: ?[]const u8 = null,
+    model: ?[]const u8 = null,
+    serial: ?[]const u8 = null,
+    physical: ?Size = null,
+
+    fractional_scale: ?f64 = null,
+    adaptive_sync: ?bool = null,
+    modes: []const ModeInfo = &.{},
+
+    captured: ?u32 = null,
+};
+
 pub const Mode = struct {
     width: i32,
     height: i32,
     refresh: i32,
+};
+
+pub const ModeInfo = struct {
+    width: i32,
+    height: i32,
+    refresh: i32,
+    preferred: bool = false,
+    current: bool = false,
 };
 
 pub const Rect = struct {
@@ -395,4 +431,114 @@ test "window details round-trip" {
     try std.testing.expectEqual(@as(i32, 300), window.min_size.?.height);
     try std.testing.expect(window.max_size == null);
     try std.testing.expectEqualStrings("DP-3", window.output.?);
+}
+
+test "outputs_changed keeps the shape ashell reads" {
+    const gpa = std.testing.allocator;
+
+    const event: Event = .{ .outputs_changed = &.{
+        .{
+            .name = "DP-3",
+            .description = null,
+            .x = 0,
+            .y = 0,
+            .width = 2560,
+            .height = 1440,
+            .usable = .{ .x = 0, .y = 30, .width = 2560, .height = 1410 },
+            .mode = .{ .width = 2560, .height = 1440, .refresh = 239970 },
+            .scale = 1,
+            .transform = "normal",
+            .workspace = 1,
+            .focused = true,
+        },
+    } };
+
+    const text = try std.json.Stringify.valueAlloc(gpa, event, .{});
+    defer gpa.free(text);
+
+    try std.testing.expectEqualStrings(
+        "{\"outputs_changed\":[{\"name\":\"DP-3\",\"description\":null,\"x\":0,\"y\":0," ++
+            "\"width\":2560,\"height\":1440," ++
+            "\"usable\":{\"x\":0,\"y\":30,\"width\":2560,\"height\":1410}," ++
+            "\"mode\":{\"width\":2560,\"height\":1440,\"refresh\":239970}," ++
+            "\"scale\":1,\"transform\":\"normal\",\"workspace\":1,\"focused\":true}]}",
+        text,
+    );
+}
+
+test "an outputs reply from an older delta still parses" {
+    const gpa = std.testing.allocator;
+
+    const text =
+        \\{"outputs":[{"name":"DP-3","description":null,"x":0,"y":0,"width":2560,"height":1440,"usable":{"x":0,"y":0,"width":2560,"height":1440},"mode":null,"scale":1,"transform":"normal","workspace":1,"focused":true}]}
+    ;
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+
+    const output = parsed.value.outputs[0];
+    try std.testing.expect(output.enabled);
+    try std.testing.expect(output.adaptive_sync == null);
+    try std.testing.expect(output.fractional_scale == null);
+    try std.testing.expectEqual(@as(usize, 0), output.modes.len);
+}
+
+test "output details round-trip" {
+    const gpa = std.testing.allocator;
+
+    const reply: Reply = .{ .outputs = &.{
+        .{
+            .name = "DP-3",
+            .description = "Samsung",
+            .x = 0,
+            .y = 0,
+            .width = 2048,
+            .height = 1152,
+            .usable = .{ .x = 0, .y = 0, .width = 2048, .height = 1152 },
+            .mode = .{ .width = 2560, .height = 1440, .refresh = 239970 },
+            .scale = 2,
+            .transform = "normal",
+            .workspace = 1,
+            .focused = true,
+            .make = "Samsung Electric Company",
+            .physical = .{ .width = 600, .height = 340 },
+            .fractional_scale = 1.25,
+            .adaptive_sync = false,
+            .modes = &.{
+                .{ .width = 2560, .height = 1440, .refresh = 239970, .preferred = true, .current = true },
+                .{ .width = 2560, .height = 1440, .refresh = 143998 },
+            },
+            .captured = 0,
+        },
+        .{
+            .name = "HDMI-A-1",
+            .description = null,
+            .x = 0,
+            .y = 0,
+            .width = 0,
+            .height = 0,
+            .usable = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+            .mode = null,
+            .scale = 1,
+            .transform = "normal",
+            .workspace = null,
+            .focused = false,
+            .enabled = false,
+        },
+    } };
+
+    const text = try std.json.Stringify.valueAlloc(gpa, reply, .{});
+    defer gpa.free(text);
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+
+    const output = parsed.value.outputs[0];
+    try std.testing.expectEqual(@as(?f64, 1.25), output.fractional_scale);
+    try std.testing.expectEqual(@as(?bool, false), output.adaptive_sync);
+    try std.testing.expectEqual(@as(usize, 2), output.modes.len);
+    try std.testing.expect(output.modes[0].current and output.modes[0].preferred);
+    try std.testing.expect(!output.modes[1].current);
+    try std.testing.expectEqual(@as(i32, 340), output.physical.?.height);
+    try std.testing.expect(!parsed.value.outputs[1].enabled);
 }

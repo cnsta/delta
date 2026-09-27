@@ -8,6 +8,7 @@ const list = @import("../util/list.zig");
 const protocol = @import("protocol.zig");
 
 const Output = @import("../Output.zig");
+const OutputHead = @import("../OutputHead.zig");
 const Window = @import("../Window.zig");
 const Workspace = @import("../Workspace.zig");
 
@@ -188,6 +189,89 @@ fn outputs(arena: Allocator) ![]const protocol.Output {
     }
 
     return out.items;
+}
+
+pub fn outputInfos(arena: Allocator) ![]const protocol.OutputInfo {
+    var out: std.ArrayList(protocol.OutputInfo) = .empty;
+
+    for (try outputs(arena)) |output| {
+        var info: protocol.OutputInfo = .{
+            .name = output.name,
+            .description = output.description,
+            .x = output.x,
+            .y = output.y,
+            .width = output.width,
+            .height = output.height,
+            .usable = output.usable,
+            .mode = output.mode,
+            .scale = output.scale,
+            .transform = output.transform,
+            .workspace = output.workspace,
+            .focused = output.focused,
+        };
+
+        if (findOutput(output.name)) |o| info.captured = o.capture_sessions;
+        if (OutputHead.find(output.name)) |head| try addHead(arena, &info, head);
+
+        try out.append(arena, info);
+    }
+
+    var it = wm.heads.iterator(.forward);
+    while (it.next()) |head| {
+        if (head.enabled) continue;
+        const name = head.name orelse continue;
+
+        var info: protocol.OutputInfo = .{
+            .name = name,
+            .description = head.description,
+            .x = 0,
+            .y = 0,
+            .width = 0,
+            .height = 0,
+            .usable = .{ .x = 0, .y = 0, .width = 0, .height = 0 },
+            .mode = null,
+            .scale = 1,
+            .transform = "normal",
+            .workspace = null,
+            .focused = false,
+        };
+        try addHead(arena, &info, head);
+
+        try out.append(arena, info);
+    }
+
+    return out.items;
+}
+
+fn addHead(arena: Allocator, info: *protocol.OutputInfo, head: *const OutputHead) !void {
+    info.enabled = head.enabled;
+    info.make = head.make;
+    info.model = head.model;
+    info.serial = head.serial;
+    if (head.physical) |p| info.physical = .{ .width = p.width, .height = p.height };
+    info.fractional_scale = head.scale;
+    info.adaptive_sync = head.adaptive_sync;
+
+    const modes = try arena.alloc(protocol.ModeInfo, head.modes.items.len);
+    for (head.modes.items, modes) |mode, *m| {
+        m.* = .{
+            .width = mode.width,
+            .height = mode.height,
+            .refresh = mode.refresh,
+            .preferred = mode.preferred,
+            .current = head.current == mode,
+        };
+    }
+    info.modes = modes;
+}
+
+fn findOutput(name: []const u8) ?*Output {
+    var it = wm.outputs.iterator(.forward);
+    while (it.next()) |output| {
+        const output_name = output.name orelse continue;
+        if (std.mem.eql(u8, output_name, name)) return output;
+    }
+    return null;
 }
 
 fn layers(arena: Allocator) ![]const protocol.Layers {
