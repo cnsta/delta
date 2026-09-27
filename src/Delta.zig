@@ -133,6 +133,18 @@ pub fn init(
     instance.workspaces.init();
 
     instance.server = if (ipc_path) |path| Server.init(path) else null;
+    instance.exportCursorEnv();
+}
+
+fn exportCursorEnv(delta: *Delta) void {
+    const cursor = delta.config.input.cursor;
+    const theme = cursor.theme orelse return;
+
+    var buf: [10]u8 = undefined;
+    const size = std.fmt.bufPrint(&buf, "{d}", .{cursor.size}) catch unreachable;
+
+    delta.child_env.put("XCURSOR_THEME", theme) catch std.process.fatal("Out of memory.", .{});
+    delta.child_env.put("XCURSOR_SIZE", size) catch std.process.fatal("Out of memory.", .{});
 }
 
 pub fn listener(
@@ -306,7 +318,11 @@ pub fn reload(delta: *Delta) void {
         old.deinit();
 
         var it = list.safeIterator(Seat, .link, &delta.seats);
-        while (it.next()) |seat| seat.reloadBindings();
+        while (it.next()) |seat| {
+            seat.reloadBindings();
+            seat.applyCursorTheme();
+        }
+        delta.exportCursorEnv();
 
         delta.dirty = true;
 
@@ -346,6 +362,7 @@ pub fn deinit(delta: *Delta) void {
     }
 
     delta.config_arena.deinit();
+    delta.child_env.deinit();
     if (delta.server) |*server| server.deinit();
 
     delta.ipc_arena.deinit();

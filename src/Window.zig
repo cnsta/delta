@@ -58,6 +58,8 @@ tiled: ?rules.Edges = null,
 decorated_focused: ?bool = null,
 border_focus: animation.Fade = .{ .settled = 0 },
 border_color_applied: ?color.Color = null,
+border_width_applied: i32 = 0,
+csd_applied: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
 tiled_informed: bool = false,
@@ -613,19 +615,29 @@ pub fn syncDecoration(window: *Window) void {
         t,
     );
 
+    const width = wm.config.border.width;
     if (window.border_color_applied) |last| {
-        if (color.eql(last, c)) return;
+        if (color.eql(last, c) and window.border_width_applied == width) return;
     }
 
     window.obj.setBorders(
         .{ .top = true, .bottom = true, .left = true, .right = true },
-        wm.config.border.width,
+        width,
         c.r,
         c.g,
         c.b,
         c.a,
     );
     window.border_color_applied = c;
+    window.border_width_applied = width;
+}
+
+fn syncDecorationMode(window: *Window) void {
+    const want_csd = window.decoration_hint == .only_supports_csd;
+    if (window.csd_applied == want_csd) return;
+
+    if (want_csd) window.obj.useCsd() else window.obj.useSsd();
+    window.csd_applied = want_csd;
 }
 
 fn fixedSize(window: *const Window) bool {
@@ -650,7 +662,6 @@ pub fn manage(window: *Window) void {
         window.new = false;
 
         window.obj.setCapabilities(capabilities);
-        window.obj.useSsd();
 
         const applied = wm.config.resolve(.{
             .app_id = window.app_id,
@@ -703,6 +714,7 @@ pub fn manage(window: *Window) void {
     window.fullscreen_request = .none;
     window.syncFullscreen();
     window.syncResizing();
+    window.syncDecorationMode();
     window.syncDecoration();
     window.syncVisibility();
 
