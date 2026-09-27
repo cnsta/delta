@@ -4,12 +4,14 @@ const wayland = @import("wayland");
 const river = wayland.client.river;
 const wl = wayland.client.wl;
 const wp = wayland.client.wp;
+const zwlr = wayland.client.zwlr;
 const fatal = std.process.fatal;
 
 const cli = @import("cli.zig");
 const Config = @import("Config.zig");
 const Delta = @import("Delta.zig");
 const Loop = @import("Loop.zig");
+const OutputHead = @import("OutputHead.zig");
 
 pub const std_options = @import("log.zig").std_options;
 
@@ -17,6 +19,7 @@ const wm_version = 4;
 const wm_version_max = 5;
 const xkb_bindings_version = 3;
 const layer_shell_version = 1;
+const output_manager_version_max = 4;
 
 const Globals = struct {
     window_manager: ?*river.WindowManagerV1 = null,
@@ -25,6 +28,7 @@ const Globals = struct {
     compositor: ?*wl.Compositor = null,
     viewporter: ?*wp.Viewporter = null,
     single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
+    output_manager: ?struct { name: u32, version: u32 } = null,
 };
 
 const child_environment = [_][2][]const u8{
@@ -39,6 +43,7 @@ test {
     _ = Delta;
     _ = Loop;
     _ = @import("Output.zig");
+    _ = OutputHead;
     _ = @import("Seat.zig");
     _ = @import("Window.zig");
     _ = @import("Workspace.zig");
@@ -128,6 +133,14 @@ pub fn main(init: std.process.Init) !void {
         globals.single_pixel,
     );
     env_owned = false;
+
+    if (globals.output_manager) |global| {
+        const manager = try registry.bind(global.name, zwlr.OutputManagerV1, global.version);
+        manager.setListener(?*anyopaque, OutputHead.managerListener, null);
+        Delta.instance.output_manager = manager;
+    } else {
+        std.log.info("zwlr_output_manager_v1 unavailable; delctl outputs will lack modes", .{});
+    }
 
     if (globals.layer_shell == null) {
         std.log.warn("river_layer_shell_v1 unavailable; layer surfaces will be closed", .{});
@@ -224,6 +237,12 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
                     river.XkbBindingsV1,
                     xkb_bindings_version,
                 ) catch fatal("Out of memory.", .{});
+            } else if (std.mem.orderZ(u8, zwlr.OutputManagerV1.interface.name, ev.interface) == .eq) {
+                const version = @min(ev.version, output_manager_version_max);
+                std.log.info("zwlr_output_manager_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, version,
+                });
+                globals.output_manager = .{ .name = ev.name, .version = version };
             } else if (std.mem.orderZ(u8, wl.Compositor.interface.name, ev.interface) == .eq) {
                 globals.compositor = registry.bind(ev.name, wl.Compositor, 4) catch
                     fatal("Out of memory.", .{});
