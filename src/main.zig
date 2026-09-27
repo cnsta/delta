@@ -14,6 +14,7 @@ const Loop = @import("Loop.zig");
 pub const std_options = @import("log.zig").std_options;
 
 const wm_version = 4;
+const wm_version_max = 5;
 const xkb_bindings_version = 3;
 const layer_shell_version = 1;
 
@@ -187,13 +188,14 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
     switch (event) {
         .global => |ev| {
             if (std.mem.orderZ(u8, river.WindowManagerV1.interface.name, ev.interface) == .eq) {
+                const version = @min(ev.version, wm_version_max);
                 std.log.info("river_window_manager_v1 advertised v{d}, binding v{d}", .{
-                    ev.version, wm_version,
+                    ev.version, version,
                 });
                 if (ev.version < wm_version) {
                     fatal("Expected river wm version to be at least {d}.", .{wm_version});
                 }
-                const wm_obj = registry.bind(ev.name, river.WindowManagerV1, wm_version) catch
+                const wm_obj = registry.bind(ev.name, river.WindowManagerV1, version) catch
                     fatal("Out of memory.", .{});
                 globals.window_manager = wm_obj;
 
