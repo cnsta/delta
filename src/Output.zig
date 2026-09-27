@@ -39,6 +39,7 @@ description: ?[]const u8 = null,
 mode: ?Mode = null,
 scale: i32 = 1,
 transform: wl.Output.Transform = .normal,
+capture_sessions: ?u32 = null,
 
 pub const Mode = struct {
     width: i32,
@@ -235,7 +236,7 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
             wm.ipc_dirty = true;
         },
 
-        .capture_sessions => {},
+        .capture_sessions => |args| output.capture_sessions = args.count,
     }
 }
 

@@ -13,7 +13,7 @@ const usage =
     \\usage: delctl [--json] <command>
     \\
     \\commands:
-    \\  outputs       connected outputs and the workspace each is showing
+    \\  outputs       outputs, their modes and vrr, and each one's workspace
     \\  workspaces    every workspace that exists
     \\  windows       every window delta knows about
     \\  layers        inferred bar/exclusion margins per output
@@ -21,7 +21,7 @@ const usage =
     \\  version       delta's version
     \\  watch         follow state changes until interrupted
     \\  action <name> [args]
-    \\                run a keybinding action; `delctl action` lists them
+    \\                run a keybinding action, `delctl action` lists them
     \\
     \\options:
     \\  --json        print delta's reply verbatim instead of a table
@@ -252,53 +252,7 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
         .outputs => |list| {
             for (list, 0..) |output, i| {
                 if (i > 0) try w.append(arena, '\n');
-
-                try w.print(arena, "{s}{s}\n", .{
-                    output.name,
-                    if (output.focused) "  (focused)" else "",
-                });
-
-                if (output.description) |desc| {
-                    try w.print(arena, "  {s}\n", .{desc});
-                }
-
-                if (output.mode) |mode| {
-                    const refresh = mode.refresh;
-
-                    try w.print(arena, "  mode       {d}x{d}@{d}.{d}{d}{d}Hz\n", .{
-                        mode.width,
-                        mode.height,
-                        @divTrunc(refresh, 1000),
-                        @divTrunc(@rem(refresh, 1000), 100),
-                        @divTrunc(@rem(refresh, 100), 10),
-                        @rem(refresh, 10),
-                    });
-                } else {
-                    try w.appendSlice(arena, "  mode       unknown\n");
-                }
-
-                try w.print(arena, "  logical    {d}x{d} at {d},{d}\n", .{
-                    output.width, output.height, output.x, output.y,
-                });
-
-                if (output.usable.width != output.width or
-                    output.usable.height != output.height)
-                {
-                    try w.print(arena, "  usable     {d}x{d} at {d},{d}\n", .{
-                        output.usable.width,
-                        output.usable.height,
-                        output.usable.x,
-                        output.usable.y,
-                    });
-                }
-
-                try w.print(arena, "  scale      {d}\n", .{output.scale});
-
-                if (!std.mem.eql(u8, output.transform, "normal")) {
-                    try w.print(arena, "  transform  {s}\n", .{output.transform});
-                }
-
-                try w.print(arena, "  workspace  {?d}\n", .{output.workspace});
+                try renderOutput(arena, w, output);
             }
         },
 
@@ -343,6 +297,192 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
     }
 
     try write(1, out.items);
+}
+
+fn renderOutput(
+    arena: std.mem.Allocator,
+    w: *std.ArrayList(u8),
+    output: protocol.OutputInfo,
+) !void {
+    try w.print(arena, "{s}{s}{s}\n", .{
+        output.name,
+        if (output.focused) "  (focused)" else "",
+        if (output.enabled) "" else "  (disabled)",
+    });
+
+    if (output.description) |desc| try w.print(arena, "  {s}\n", .{desc});
+    if (output.make) |make| try w.print(arena, "  make       {s}\n", .{make});
+    if (output.model) |model| try w.print(arena, "  model      {s}\n", .{model});
+    if (output.serial) |serial| try w.print(arena, "  serial     {s}\n", .{serial});
+    if (output.physical) |p| try w.print(arena, "  physical   {d}x{d} mm\n", .{ p.width, p.height });
+
+    if (output.enabled) {
+        if (output.mode) |mode| {
+            try w.print(arena, "  mode       {d}x{d}@", .{ mode.width, mode.height });
+            try printRefresh(arena, w, mode.refresh);
+            try w.appendSlice(arena, "Hz");
+            if (isPreferred(output.modes, mode)) try w.appendSlice(arena, "  preferred");
+            try w.append(arena, '\n');
+        } else {
+            try w.appendSlice(arena, "  mode       unknown\n");
+        }
+
+        try w.print(arena, "  logical    {d}x{d} at {d},{d}\n", .{
+            output.width, output.height, output.x, output.y,
+        });
+
+        if (output.usable.width != output.width or
+            output.usable.height != output.height)
+        {
+            try w.print(arena, "  usable     {d}x{d} at {d},{d}\n", .{
+                output.usable.width,
+                output.usable.height,
+                output.usable.x,
+                output.usable.y,
+            });
+        }
+
+        if (output.fractional_scale) |scale| {
+            try w.print(arena, "  scale      {d}\n", .{scale});
+        } else {
+            try w.print(arena, "  scale      {d}\n", .{output.scale});
+        }
+
+        if (!std.mem.eql(u8, output.transform, "normal")) {
+            try w.print(arena, "  transform  {s}\n", .{output.transform});
+        }
+
+        if (output.adaptive_sync) |on| {
+            try w.print(arena, "  vrr        {s}\n", .{if (on) "on" else "off"});
+        }
+
+        if (output.captured) |n| {
+            if (n > 0) try w.print(arena, "  captured   {d} session(s)\n", .{n});
+        }
+
+        try w.print(arena, "  workspace  {?d}\n", .{output.workspace});
+    }
+
+    const groups = try groupModes(arena, output.modes);
+    for (groups, 0..) |group, i| {
+        try w.appendSlice(arena, if (i == 0) "  modes      " else "             ");
+        try w.print(arena, "{d}x{d} ", .{ group.width, group.height });
+
+        for (group.modes) |mode| {
+            try w.append(arena, ' ');
+            try printRefresh(arena, w, mode.refresh);
+            if (mode.current) try w.append(arena, '*');
+            if (mode.preferred) try w.append(arena, '+');
+        }
+        try w.append(arena, '\n');
+    }
+}
+
+fn printRefresh(arena: std.mem.Allocator, w: *std.ArrayList(u8), refresh: i32) !void {
+    const mhz: u32 = @intCast(@max(refresh, 0));
+    try w.print(arena, "{d}.{d:0>3}", .{ mhz / 1000, mhz % 1000 });
+}
+
+fn isPreferred(modes: []const protocol.ModeInfo, mode: protocol.Mode) bool {
+    for (modes) |m| {
+        if (m.width == mode.width and m.height == mode.height and m.refresh == mode.refresh) {
+            return m.preferred;
+        }
+    }
+    return false;
+}
+
+const ModeGroup = struct {
+    width: i32,
+    height: i32,
+    modes: []const protocol.ModeInfo,
+};
+
+fn groupModes(
+    arena: std.mem.Allocator,
+    modes: []const protocol.ModeInfo,
+) ![]const ModeGroup {
+    var groups: std.ArrayList(ModeGroup) = .empty;
+
+    for (modes, 0..) |mode, i| {
+        const seen = for (modes[0..i]) |earlier| {
+            if (earlier.width == mode.width and earlier.height == mode.height) break true;
+        } else false;
+        if (seen) continue;
+
+        var members: std.ArrayList(protocol.ModeInfo) = .empty;
+        for (modes[i..]) |m| {
+            if (m.width == mode.width and m.height == mode.height) try members.append(arena, m);
+        }
+
+        try groups.append(arena, .{
+            .width = mode.width,
+            .height = mode.height,
+            .modes = members.items,
+        });
+    }
+
+    return groups.items;
+}
+
+test "modes group by resolution in listed order" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    const groups = try groupModes(arena, &.{
+        .{ .width = 2560, .height = 1440, .refresh = 239970, .preferred = true },
+        .{ .width = 1920, .height = 1080, .refresh = 60000 },
+        .{ .width = 2560, .height = 1440, .refresh = 143998, .current = true },
+        .{ .width = 1920, .height = 1080, .refresh = 50000 },
+    });
+
+    try std.testing.expectEqual(@as(usize, 2), groups.len);
+    try std.testing.expectEqual(@as(i32, 2560), groups[0].width);
+    try std.testing.expectEqual(@as(usize, 2), groups[0].modes.len);
+    try std.testing.expectEqual(@as(i32, 143998), groups[0].modes[1].refresh);
+    try std.testing.expectEqual(@as(i32, 50000), groups[1].modes[1].refresh);
+}
+
+test "an output renders its modes and vrr state" {
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var out: std.ArrayList(u8) = .empty;
+    try renderOutput(arena, &out, .{
+        .name = "DP-3",
+        .description = null,
+        .x = 0,
+        .y = 0,
+        .width = 2560,
+        .height = 1440,
+        .usable = .{ .x = 0, .y = 0, .width = 2560, .height = 1440 },
+        .mode = .{ .width = 2560, .height = 1440, .refresh = 143998 },
+        .scale = 1,
+        .transform = "normal",
+        .workspace = 1,
+        .focused = true,
+        .fractional_scale = 1,
+        .adaptive_sync = false,
+        .modes = &.{
+            .{ .width = 2560, .height = 1440, .refresh = 239970, .preferred = true },
+            .{ .width = 2560, .height = 1440, .refresh = 143998, .current = true },
+            .{ .width = 1920, .height = 1080, .refresh = 60000 },
+        },
+    });
+
+    try std.testing.expectEqualStrings(
+        \\DP-3  (focused)
+        \\  mode       2560x1440@143.998Hz
+        \\  logical    2560x1440 at 0,0
+        \\  scale      1
+        \\  vrr        off
+        \\  workspace  1
+        \\  modes      2560x1440  239.970+ 143.998*
+        \\             1920x1080  60.000
+        \\
+    , out.items);
 }
 
 fn renderWindow(
