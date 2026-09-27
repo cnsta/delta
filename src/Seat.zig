@@ -82,6 +82,13 @@ pub fn create(river_seat: *river.SeatV1) void {
     }
 
     seat.setupBindings();
+    seat.applyCursorTheme();
+}
+
+pub fn applyCursorTheme(seat: *Seat) void {
+    const cursor = wm.config.input.cursor;
+    const theme = cursor.theme orelse return;
+    seat.obj.setXcursorTheme(theme.ptr, cursor.size);
 }
 
 pub fn fromObj(obj: *river.SeatV1) *Seat {
@@ -93,6 +100,10 @@ pub fn maybeDestroy(seat: *Seat) void {
 
     seat.repeat_binding = null;
     seat.pending.clear();
+
+    if (seat.focused) |w| w.focus_count -= 1;
+    seat.focused = null;
+    wm.ipc_dirty = true;
 
     while (seat.xkb_bindings.first()) |binding| binding.destroy();
     while (seat.pointer_bindings.first()) |binding| binding.destroy();
@@ -421,7 +432,6 @@ pub fn dropFocus(seat: *Seat) void {
     wm.ipc_dirty = true;
 }
 
-/// a click or touch raises (and resyncs focus), pointer hover only focuses.
 fn focusInteracted(seat: *Seat, window: ?*Window) void {
     if (seat.focus_resync) {
         seat.dropFocus();

@@ -79,6 +79,13 @@ pub fn maybeDestroy(output: *Output) void {
     output.workspace.output = null;
     output.previous = null;
 
+    var workspaces = wm.workspaces.iterator(.forward);
+    while (workspaces.next()) |ws| {
+        if (ws.last_output != output) continue;
+        ws.last_output = null;
+        ws.offset = .zero;
+    }
+
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetOutput(output);
 
@@ -116,6 +123,11 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
         other.workspace = other.previous orelse Workspace.firstUnmapped();
         other.workspace.output = other;
         other.previous = null;
+
+        var it = target.windows.iterator(.forward);
+        while (it.next()) |window| {
+            if (window.fullscreen == other) window.fullscreen = output;
+        }
     }
 
     const outgoing = output.workspace;
@@ -125,6 +137,7 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 
     output.workspace = target;
     target.output = output;
+    target.last_output = null;
 
     wm.ipc_dirty = true;
 
