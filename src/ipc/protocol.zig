@@ -21,9 +21,9 @@ pub const Reply = union(enum) {
     err: []const u8,
 
     version: []const u8,
-    windows: []const Window,
+    windows: []const WindowInfo,
     workspaces: []const Workspace,
-    focused_window: ?Window,
+    focused_window: ?WindowInfo,
     outputs: []const Output,
     layers: []const Layers,
 
@@ -89,6 +89,35 @@ pub const Window = struct {
     fullscreen: bool,
 };
 
+pub const WindowInfo = struct {
+    id: []const u8,
+
+    app_id: ?[]const u8,
+    title: ?[]const u8,
+
+    workspace: ?u32,
+
+    focused: bool,
+    float: bool,
+    fullscreen: bool,
+
+    output: ?[]const u8 = null,
+    pid: ?i32 = null,
+    parent: ?[]const u8 = null,
+
+    geometry: ?Rect = null,
+    size: ?Size = null,
+    min_size: ?Size = null,
+    max_size: ?Size = null,
+
+    dialog: bool = false,
+    hidden: bool = false,
+
+    decoration: ?[]const u8 = null,
+    presentation: ?[]const u8 = null,
+    captured: ?u32 = null,
+};
+
 pub const Workspace = struct {
     id: u32,
 
@@ -150,6 +179,11 @@ pub const Mode = struct {
 pub const Rect = struct {
     x: i32,
     y: i32,
+    width: i32,
+    height: i32,
+};
+
+pub const Size = struct {
     width: i32,
     height: i32,
 };
@@ -285,4 +319,80 @@ test "an absent app id is null rather than empty" {
     defer gpa.free(text);
 
     try std.testing.expect(std.mem.indexOf(u8, text, "\"app_id\":null") != null);
+}
+
+test "windows_changed keeps the shape ashell reads" {
+    const gpa = std.testing.allocator;
+
+    const event: Event = .{ .windows_changed = &.{
+        .{
+            .id = "abc",
+            .app_id = "foot",
+            .title = "~",
+            .workspace = 1,
+            .focused = true,
+            .float = false,
+            .fullscreen = false,
+        },
+    } };
+
+    const text = try std.json.Stringify.valueAlloc(gpa, event, .{});
+    defer gpa.free(text);
+
+    try std.testing.expectEqualStrings(
+        "{\"windows_changed\":[{\"id\":\"abc\",\"app_id\":\"foot\",\"title\":\"~\"," ++
+            "\"workspace\":1,\"focused\":true,\"float\":false,\"fullscreen\":false}]}",
+        text,
+    );
+}
+
+test "a windows reply from an older delta still parses" {
+    const gpa = std.testing.allocator;
+
+    const text =
+        \\{"windows":[{"id":"abc","app_id":null,"title":"~","workspace":2,"focused":false,"float":true,"fullscreen":false}]}
+    ;
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+
+    const window = parsed.value.windows[0];
+    try std.testing.expect(window.float);
+    try std.testing.expect(window.geometry == null);
+    try std.testing.expect(window.captured == null);
+    try std.testing.expect(!window.dialog);
+}
+
+test "window details round-trip" {
+    const gpa = std.testing.allocator;
+
+    const reply: Reply = .{ .focused_window = .{
+        .id = "abc",
+        .app_id = "foot",
+        .title = null,
+        .workspace = 1,
+        .focused = true,
+        .float = true,
+        .fullscreen = false,
+        .output = "DP-3",
+        .pid = 42,
+        .geometry = .{ .x = 10, .y = 40, .width = 800, .height = 600 },
+        .size = .{ .width = 800, .height = 600 },
+        .min_size = .{ .width = 400, .height = 300 },
+        .decoration = "prefers-ssd",
+        .captured = 1,
+    } };
+
+    const text = try std.json.Stringify.valueAlloc(gpa, reply, .{});
+    defer gpa.free(text);
+
+    const parsed = try std.json.parseFromSlice(Reply, gpa, text, .{});
+    defer parsed.deinit();
+
+    const window = parsed.value.focused_window.?;
+    try std.testing.expectEqual(@as(?i32, 42), window.pid);
+    try std.testing.expectEqual(@as(i32, 40), window.geometry.?.y);
+    try std.testing.expectEqual(@as(i32, 300), window.min_size.?.height);
+    try std.testing.expect(window.max_size == null);
+    try std.testing.expectEqualStrings("DP-3", window.output.?);
 }

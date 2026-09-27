@@ -1,6 +1,7 @@
 const std = @import("std");
 const wayland = @import("wayland");
 
+const river = wayland.client.river;
 const wl = wayland.client.wl;
 const wm = &@import("../Delta.zig").instance;
 const list = @import("../util/list.zig");
@@ -47,6 +48,87 @@ fn windows(arena: Allocator) ![]const protocol.Window {
     }
 
     return out.items;
+}
+
+pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
+    var out: std.ArrayList(protocol.WindowInfo) = .empty;
+
+    var it = wm.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.identifier().len == 0) continue;
+
+        const output = window.fullscreen orelse if (window.workspace) |ws| ws.output else null;
+
+        try out.append(arena, .{
+            .id = window.identifier(),
+            .app_id = window.app_id,
+            .title = window.title,
+            .workspace = if (window.workspace) |ws| ws.id else null,
+            .focused = window.focus_count > 0,
+            .float = window.float,
+            .fullscreen = window.fullscreen != null,
+
+            .output = if (output) |o| o.name else null,
+            .pid = window.pid,
+            .parent = if (window.parent) |p| p.identifier() else null,
+
+            .geometry = geometry(window),
+            .size = size(window.width, window.height),
+            .min_size = size(window.limits.min.width, window.limits.min.height),
+            .max_size = size(window.limits.max.width, window.limits.max.height),
+
+            .dialog = window.isDialog(),
+            .hidden = window.hidden,
+
+            .decoration = if (window.decoration_hint) |h| decorationName(h) else null,
+            .presentation = if (window.presentation_hint) |h| presentationName(h) else null,
+            .captured = window.capture_sessions,
+        });
+    }
+
+    return out.items;
+}
+
+fn geometry(window: *const Window) ?protocol.Rect {
+    if (window.fullscreen) |output| {
+        return .{ .x = output.x, .y = output.y, .width = output.width, .height = output.height };
+    }
+
+    const ws = window.workspace orelse return null;
+    const output = ws.output orelse return null;
+    if (window.slot.width == 0 or window.slot.height == 0) return null;
+
+    return .{
+        .x = output.x + window.slot.x,
+        .y = output.y + window.slot.y,
+        .width = window.slot.width,
+        .height = window.slot.height,
+    };
+}
+
+fn size(width: i32, height: i32) ?protocol.Size {
+    if (width <= 0 and height <= 0) return null;
+    return .{ .width = width, .height = height };
+}
+
+fn decorationName(hint: river.WindowV1.DecorationHint) []const u8 {
+    return switch (hint) {
+        .only_supports_csd => "csd-only",
+        .prefers_csd => "prefers-csd",
+        .prefers_ssd => "prefers-ssd",
+        .no_preference => "no-preference",
+
+        _ => "unknown",
+    };
+}
+
+fn presentationName(hint: river.OutputV1.PresentationMode) []const u8 {
+    return switch (hint) {
+        .vsync => "vsync",
+        .async => "async",
+
+        _ => "unknown",
+    };
 }
 
 fn workspaces(arena: Allocator) ![]const protocol.Workspace {

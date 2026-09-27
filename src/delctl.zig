@@ -13,18 +13,18 @@ const usage =
     \\usage: delctl [--json] <command>
     \\
     \\commands:
-    \\  outputs      connected outputs and the workspace each is showing
-    \\  workspaces   every workspace that exists
-    \\  windows      every window delta knows about
-    \\  layers       inferred bar/exclusion margins per output
-    \\  focused      the focused window, if any
-    \\  version      delta's version
-    \\  watch        follow state changes until interrupted
+    \\  outputs       connected outputs and the workspace each is showing
+    \\  workspaces    every workspace that exists
+    \\  windows       every window delta knows about
+    \\  layers        inferred bar/exclusion margins per output
+    \\  focused       the focused window, if any
+    \\  version       delta's version
+    \\  watch         follow state changes until interrupted
     \\  action <name> [args]
-    \\               run a keybinding action; `delctl action` lists them
+    \\                run a keybinding action; `delctl action` lists them
     \\
     \\options:
-    \\  --json       print delta's reply verbatim instead of a table
+    \\  --json        print delta's reply verbatim instead of a table
     \\
     \\delctl finds delta through $DELTA_SOCKET, falling back to
     \\$XDG_RUNTIME_DIR/delta-$WAYLAND_DISPLAY.sock.
@@ -345,18 +345,56 @@ fn render(arena: std.mem.Allocator, reply_json: []const u8) !void {
 fn renderWindow(
     arena: std.mem.Allocator,
     w: *std.ArrayList(u8),
-    window: protocol.Window,
+    window: protocol.WindowInfo,
 ) !void {
     // identifier first, because it is what every other command takes as
     // an argument and the reason to run this at all is usually to find one.
     try w.print(arena, "{s}\n", .{window.id});
     try w.print(arena, "  app_id     {?s}\n", .{window.app_id});
     try w.print(arena, "  title      {?s}\n", .{window.title});
-    try w.print(arena, "  workspace  {?d}\n", .{window.workspace});
 
-    if (window.focused) try w.appendSlice(arena, "  focused\n");
-    if (window.float) try w.appendSlice(arena, "  float\n");
-    if (window.fullscreen) try w.appendSlice(arena, "  fullscreen\n");
+    try w.print(arena, "  workspace  {?d}", .{window.workspace});
+    if (window.output) |output| try w.print(arena, " on {s}", .{output});
+    try w.append(arena, '\n');
+
+    if (window.geometry) |g| {
+        try w.print(arena, "  at         {d},{d}\n", .{ g.x, g.y });
+        try w.print(arena, "  size       {d}x{d}", .{ g.width, g.height });
+
+        if (window.size) |s| {
+            if (s.width != g.width or s.height != g.height) {
+                try w.print(arena, "  (client {d}x{d})", .{ s.width, s.height });
+            }
+        }
+        try w.append(arena, '\n');
+    } else if (window.size) |s| {
+        try w.print(arena, "  size       {d}x{d}  (client)\n", .{ s.width, s.height });
+    }
+
+    if (window.min_size) |s| try w.print(arena, "  min        {d}x{d}\n", .{ s.width, s.height });
+    if (window.max_size) |s| try w.print(arena, "  max        {d}x{d}\n", .{ s.width, s.height });
+
+    if (window.pid) |pid| try w.print(arena, "  pid        {d}\n", .{pid});
+    if (window.parent) |parent| try w.print(arena, "  parent     {s}\n", .{parent});
+    if (window.decoration) |d| try w.print(arena, "  decoration {s}\n", .{d});
+    if (window.captured) |n| {
+        if (n > 0) try w.print(arena, "  captured   {d} session(s)\n", .{n});
+    }
+
+    var flags: std.ArrayList(u8) = .empty;
+    inline for (.{
+        .{ window.focused, "focused" },
+        .{ window.float, "float" },
+        .{ window.fullscreen, "fullscreen" },
+        .{ window.dialog, "dialog" },
+        .{ window.hidden, "hidden" },
+    }) |flag| {
+        if (flag[0]) try flags.print(arena, " {s}", .{flag[1]});
+    }
+    if (window.presentation) |p| {
+        if (!std.mem.eql(u8, p, "vsync")) try flags.print(arena, " {s}", .{p});
+    }
+    if (flags.items.len > 0) try w.print(arena, "  flags     {s}\n", .{flags.items});
 }
 
 /// Write everything, retrying short writes.

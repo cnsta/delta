@@ -221,6 +221,8 @@ fn listener(_: *river.OutputV1, event: river.OutputV1.Event, output: *Output) vo
             obj.setListener(*Output, wlOutputListener, output);
             wm.ipc_dirty = true;
         },
+
+        .capture_sessions => {},
     }
 }
 

@@ -39,8 +39,8 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
         .version => return try stringify(arena, protocol.Reply{ .version = cli.version }),
 
         .windows => {
-            const state = try snapshot.build(arena);
-            return try stringify(arena, protocol.Reply{ .windows = state.windows });
+            const windows = try snapshot.windowInfos(arena);
+            return try stringify(arena, protocol.Reply{ .windows = windows });
         },
 
         .workspaces => {
@@ -59,10 +59,8 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
         },
 
         .focused_window => {
-            const state = try snapshot.build(arena);
-
-            var found: ?protocol.Window = null;
-            for (state.windows) |window| {
+            var found: ?protocol.WindowInfo = null;
+            for (try snapshot.windowInfos(arena)) |window| {
                 if (window.focused) found = window;
             }
 

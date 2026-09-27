@@ -70,6 +70,10 @@ app_id: ?[]const u8 = null,
 title: ?[]const u8 = null,
 pid: ?i32 = null,
 
+decoration_hint: ?river.WindowV1.DecorationHint = null,
+presentation_hint: ?river.OutputV1.PresentationMode = null,
+capture_sessions: ?u32 = null,
+
 overshoot: geom.Size = geom.Size.zero,
 
 focus_count: u8 = 0,
@@ -786,6 +790,10 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
         },
 
         .unreliable_pid => |args| window.pid = args.unreliable_pid,
+
+        .decoration_hint => |args| window.decoration_hint = args.hint,
+        .presentation_hint => |args| window.presentation_hint = args.hint,
+        .capture_sessions => |args| window.capture_sessions = args.count,
 
         else => {},
     }
