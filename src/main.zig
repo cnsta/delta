@@ -16,7 +16,7 @@ const OutputHead = @import("OutputHead.zig");
 pub const std_options = @import("log.zig").std_options;
 
 const wm_version = 4;
-const wm_version_max = 5;
+const wm_version_max = 6;
 const xkb_bindings_version = 3;
 const layer_shell_version = 1;
 const output_manager_version_max = 4;

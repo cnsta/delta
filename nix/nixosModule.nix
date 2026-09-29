@@ -141,6 +141,33 @@ in {
       '';
     };
 
+    hdr.outputs = mkOption {
+      type = types.listOf types.str;
+      default = [];
+      example = ["DP-3"];
+      description = ''
+        Outputs to drive in HDR (BT.2020 primaries, PQ transfer function, 10 bit
+        render format), by connector name, or `"*"` for every output that
+        supports it.
+
+        Outputs whose EDID lacks PQ or BT.2020 stay SDR. If the backend rejects
+        the configuration (for example for lack of link bandwidth), river falls
+        back to 8 bit SDR and logs a warning.
+
+        Requires `renderer = "vulkan"`.
+      '';
+    };
+
+    renderBitDepth = mkOption {
+      type = types.enum [8 10];
+      default = 8;
+      description = ''
+        Render format bit depth for every output (sets `RIVER_RENDER_BIT_DEPTH`).
+        10 reduces banding in gradients even in SDR. HDR outputs always use 10.
+        Falls back to 8 if the backend rejects it.
+      '';
+    };
+
     windowManager = {
       name = mkOption {
         type = types.str;
@@ -338,6 +365,14 @@ in {
   config = mkIf cfg.enable {
     assertions = [
       {
+        assertion = cfg.hdr.outputs == [] || cfg.renderer == "vulkan";
+        message = ''
+          programs.river-delta.hdr.outputs requires
+          programs.river-delta.renderer = "vulkan". Other wlroots renderers
+          can't convert content to an HDR output's colour space.
+        '';
+      }
+      {
         assertion =
           cfg.renderer
           != "vulkan"
@@ -398,7 +433,9 @@ in {
         ExecStart = "${cfg.package}/bin/river -c ${initScript}";
         Environment =
           ["PATH=${cfg.path}"]
-          ++ lib.optional (cfg.renderer != null) "WLR_RENDERER=${cfg.renderer}";
+          ++ lib.optional (cfg.renderer != null) "WLR_RENDERER=${cfg.renderer}"
+          ++ lib.optional (cfg.hdr.outputs != []) "RIVER_HDR=${lib.concatStringsSep "," cfg.hdr.outputs}"
+          ++ lib.optional (cfg.renderBitDepth != 8) "RIVER_RENDER_BIT_DEPTH=${toString cfg.renderBitDepth}";
         UnsetEnvironment = "WAYLAND_DISPLAY DISPLAY";
         ExecStopPost = "${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP";
         Restart = "no";

@@ -1,0 +1,167 @@
+diff --git a/river/OutputColor.zig b/river/OutputColor.zig
+new file mode 100644
+index 0000000..62c0d0e
+--- /dev/null
++++ b/river/OutputColor.zig
+@@ -0,0 +1,123 @@
++// SPDX-FileCopyrightText: © 2026 The River Developers
++// SPDX-License-Identifier: GPL-3.0-only
++
++//! HDR and render bit depth for outputs, configured through the environment
++//! since wlr-output-management has no way to express them:
++//!
++//!   RIVER_HDR=DP-3,HDMI-A-1   (or "*" for every output that supports it)
++//!   RIVER_RENDER_BIT_DEPTH=10 (8 is the default)
++//!
++//! HDR means BT.2020 primaries with the ST 2084 (PQ) transfer function and
++//! implies a 10 bit render format. wlr_scene converts SDR and HDR client
++//! content to the output's image description.
++
++const std = @import("std");
++const mem = std.mem;
++const wlr = @import("wlroots");
++
++const server = &@import("main.zig").server;
++
++const log = std.log.scoped(.output);
++
++const DRM_FORMAT_XRGB8888 = fourcc("XR24");
++const DRM_FORMAT_XRGB2101010 = fourcc("XR30");
++
++extern fn wlr_output_state_set_image_description(
++    state: *wlr.Output.State,
++    image_desc: ?*const wlr.Output.ImageDescription,
++) bool;
++
++fn fourcc(comptime code: *const [4]u8) u32 {
++    return mem.readInt(u32, code, .little);
++}
++
++fn hdrRequested(name: []const u8) bool {
++    const value = std.c.getenv("RIVER_HDR") orelse return false;
++    var it = mem.tokenizeAny(u8, mem.span(value), ", ");
++    while (it.next()) |entry| {
++        if (mem.eql(u8, entry, "*") or mem.eql(u8, entry, name)) return true;
++    }
++    return false;
++}
++
++fn tenBitRequested() bool {
++    const value = std.c.getenv("RIVER_RENDER_BIT_DEPTH") orelse return false;
++    return mem.eql(u8, mem.span(value), "10");
++}
++
++fn hdrSupported(wlr_output: *const wlr.Output) bool {
++    const primaries: u32 = @intCast(@intFromEnum(wlr.color.NamedPrimaries.bt2020));
++    const transfer: u32 = @intCast(@intFromEnum(wlr.color.TransferFunction.st2084_pq));
++    return wlr_output.supported_primaries & primaries != 0 and
++        wlr_output.supported_transfer_functions & transfer != 0;
++}
++
++/// Add the configured color state for wlr_output to a modeset. With
++/// allow false, the output is explicitly reset to 8 bit SDR instead, which
++/// is used to retry after the configured state was rejected. Returns true if
++/// the state requests anything beyond the default 8 bit SDR.
++pub fn apply(wlr_output: *wlr.Output, state: *wlr.Output.State, allow: bool) bool {
++    const name = mem.span(wlr_output.name);
++    const hdr = hdrRequested(name);
++    const ten_bit = tenBitRequested();
++    if (!hdr and !ten_bit) return false;
++
++    if (allow and hdr and hdrSupported(wlr_output)) {
++        const desc: wlr.Output.ImageDescription = .{
++            .primaries = .bt2020,
++            .transfer_function = .st2084_pq,
++            .mastering_display_primaries = mem.zeroes(wlr.color.Primaries),
++            .mastering_luminance = .{ .min = 0, .max = 0 },
++            .max_cll = 0,
++            .max_fall = 0,
++        };
++        if (wlr_output_state_set_image_description(state, &desc)) {
++            state.setRenderFormat(DRM_FORMAT_XRGB2101010);
++            log.info("enabling HDR (BT.2020/PQ, 10 bit) on {s}", .{name});
++            return true;
++        }
++        log.err("out of memory", .{});
++    } else if (allow and hdr) {
++        log.info("HDR requested for {s}, but the output does not support BT.2020/PQ", .{name});
++    }
++
++    _ = wlr_output_state_set_image_description(state, null);
++    if (allow and ten_bit) {
++        state.setRenderFormat(DRM_FORMAT_XRGB2101010);
++        log.info("using a 10 bit render format on {s}", .{name});
++        return true;
++    }
++    state.setRenderFormat(DRM_FORMAT_XRGB8888);
++    return false;
++}
++
++/// Apply the configured color state to every output in states. Returns true
++/// if any output requests more than 8 bit SDR.
++pub fn applyAll(states: []wlr.Backend.OutputState, allow: bool) bool {
++    var any = false;
++    for (states) |*state| {
++        if (!state.base.committed.enabled or !state.base.enabled) continue;
++        if (apply(state.output, &state.base, allow)) any = true;
++    }
++    return any;
++}
++
++/// Prepare swapchains for a modeset with the configured color state, falling
++/// back to 8 bit SDR if the backend rejects it, e.g. for lack of link
++/// bandwidth.
++pub fn prepare(manager: *wlr.OutputSwapchainManager, states: []wlr.Backend.OutputState) bool {
++    const wants = applyAll(states, true);
++    if (manager.prepare(states)) return true;
++    if (!wants) return false;
++
++    log.warn("HDR/10 bit output configuration rejected, falling back to 8 bit SDR", .{});
++    _ = applyAll(states, false);
++    manager.finish();
++    manager.init(server.backend);
++    return manager.prepare(states);
++}
++
++test fourcc {
++    try std.testing.expectEqual(@as(u32, 0x34325258), DRM_FORMAT_XRGB8888);
++    try std.testing.expectEqual(@as(u32, 0x30335258), DRM_FORMAT_XRGB2101010);
++}
+diff --git a/river/OutputManager.zig b/river/OutputManager.zig
+index 630600c..9926cc2 100644
+--- a/river/OutputManager.zig
++++ b/river/OutputManager.zig
+@@ -18,6 +18,7 @@ const util = @import("util.zig");
+ const DragIcon = @import("DragIcon.zig");
+ const LockSurface = @import("LockSurface.zig");
+ const Output = @import("Output.zig");
++const OutputColor = @import("OutputColor.zig");
+ const SceneNodeData = @import("SceneNodeData.zig");
+ const Window = @import("Window.zig");
+ const XwaylandOverrideRedirect = @import("XwaylandOverrideRedirect.zig");
+@@ -115,12 +116,14 @@ fn handleManagerTest(_: *wl.Listener(*wlr.OutputConfigurationV1), config: *wlr.O
+         return;
+     };
+     defer std.c.free(states.ptr);
++    // Frees e.g. the image description OutputColor may add.
++    defer for (states) |*s| s.base.finish();
+ 
+     var swapchain_manager: wlr.OutputSwapchainManager = undefined;
+     swapchain_manager.init(server.backend);
+     defer swapchain_manager.finish();
+ 
+-    if (swapchain_manager.prepare(states)) {
++    if (OutputColor.prepare(&swapchain_manager, states)) {
+         config.sendSucceeded();
+     } else {
+         config.sendFailed();
+@@ -338,7 +341,7 @@ pub fn commitOutputState(om: *OutputManager) void {
+         swapchain_manager.init(server.backend);
+         defer swapchain_manager.finish();
+ 
+-        if (!swapchain_manager.prepare(states.items)) {
++        if (!OutputColor.prepare(&swapchain_manager, states.items)) {
+             log.err("failed to prepare new output configuration", .{});
+             om.modesetFailed();
+             return;
+

@@ -64,6 +64,8 @@ in
 
     deps = callPackage ./build.zig.zon.nix {};
 
+    patches = [./river-hdr-output.patch];
+
     nativeBuildInputs =
       [
         pkg-config
