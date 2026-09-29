@@ -776,6 +776,9 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
             } };
         },
 
+        // TODO: touchscreen move/resize (v6)
+        .touch_move_requested, .touch_resize_requested => {},
+
         .identifier => |args| window.setIdentifier(args.identifier),
 
         .parent => |args| {

@@ -806,5 +806,7 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         },
         .wl_seat => {},
         .shell_surface_interaction => {},
+        // TODO: touch ops (v6).
+        .op_delta_touch, .op_release_touch, .op_cancel_touch => {},
     }
 }
