@@ -96,6 +96,35 @@ pub fn placeFloat(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
     return .{ .content = content, .tiled = .{} };
 }
 
+pub fn resizeEdges(box: geom.Rect, pointer: geom.Point) Edges {
+    const middle = box.center();
+    const left = pointer.x < middle.x;
+    const top = pointer.y < middle.y;
+    return .{ .left = left, .right = !left, .top = top, .bottom = !top };
+}
+
+pub fn resizeBox(start: geom.Rect, dx: i32, dy: i32, edges: Edges, limits: Limits) geom.Rect {
+    var box = start;
+
+    if (edges.left) box.width -= dx else if (edges.right) box.width += dx;
+    if (edges.top) box.height -= dy else if (edges.bottom) box.height += dy;
+
+    box.width = limit(box.width, limits.min.width, limits.max.width);
+    box.height = limit(box.height, limits.min.height, limits.max.height);
+
+    if (edges.left) box.x = start.x + start.width - box.width;
+    if (edges.top) box.y = start.y + start.height - box.height;
+
+    return box;
+}
+
+fn limit(extent: i32, min: i32, max: i32) i32 {
+    var result = extent;
+    if (min > 0) result = @max(result, min);
+    if (max > 0) result = @min(result, max);
+    return @max(1, result);
+}
+
 fn keepReachable(content: *geom.Rect, area: geom.Rect) void {
     const border = borderWidth();
     const show_x = std.math.clamp(@divTrunc(content.width, 4), 10, 75) + border;
@@ -313,4 +342,53 @@ test "desktopClearance measures the full off-screen distance" {
     try std.testing.expectEqual(@as(i32, 1200), desktopClearance(box, .right, &output));
     try std.testing.expectEqual(@as(i32, 700), desktopClearance(box, .up, &output));
     try std.testing.expectEqual(@as(i32, 700), desktopClearance(box, .down, &output));
+}
+
+test "resizeEdges picks the grabbed quadrant's corner" {
+    const box: geom.Rect = .{ .x = 100, .y = 100, .width = 200, .height = 100 };
+
+    try std.testing.expect(resizeEdges(box, .{ .x = 110, .y = 110 }).eql(.{ .left = true, .top = true }));
+    try std.testing.expect(resizeEdges(box, .{ .x = 290, .y = 110 }).eql(.{ .right = true, .top = true }));
+    try std.testing.expect(resizeEdges(box, .{ .x = 110, .y = 190 }).eql(.{ .left = true, .bottom = true }));
+    try std.testing.expect(resizeEdges(box, .{ .x = 290, .y = 190 }).eql(.{ .right = true, .bottom = true }));
+    // the centre itself belongs to the bottom-right cell.
+    try std.testing.expect(resizeEdges(box, box.center()).eql(.{ .right = true, .bottom = true }));
+}
+
+test "resizeBox moves only the dragged edges" {
+    const start: geom.Rect = .{ .x = 100, .y = 100, .width = 200, .height = 100 };
+
+    // top-left dragged up and left: grows, bottom-right corner fixed.
+    try std.testing.expect(resizeBox(start, -20, -10, .{ .left = true, .top = true }, .{})
+        .eql(.{ .x = 80, .y = 90, .width = 220, .height = 110 }));
+    // top-left dragged in: shrinks, bottom-right corner still fixed.
+    try std.testing.expect(resizeBox(start, 30, 20, .{ .left = true, .top = true }, .{})
+        .eql(.{ .x = 130, .y = 120, .width = 170, .height = 80 }));
+    // bottom-right behaves as it always did.
+    try std.testing.expect(resizeBox(start, 30, 20, .{ .right = true, .bottom = true }, .{})
+        .eql(.{ .x = 100, .y = 100, .width = 230, .height = 120 }));
+    // top-right: x fixed, y follows.
+    try std.testing.expect(resizeBox(start, 10, -10, .{ .right = true, .top = true }, .{})
+        .eql(.{ .x = 100, .y = 90, .width = 210, .height = 110 }));
+}
+
+test "resizeBox keeps the opposite edge when the hints stop it" {
+    const start: geom.Rect = .{ .x = 100, .y = 100, .width = 200, .height = 100 };
+    const limits: Limits = .{
+        .min = .{ .width = 150, .height = 80 },
+        .max = .{ .width = 250, .height = 120 },
+    };
+
+    // shrinking from the left past the minimum: the right edge stays at 300.
+    const small = resizeBox(start, 500, 500, .{ .left = true, .top = true }, limits);
+    try std.testing.expect(small.eql(.{ .x = 150, .y = 120, .width = 150, .height = 80 }));
+
+    // growing from the left past the maximum: the right edge still stays.
+    const big = resizeBox(start, -500, -500, .{ .left = true, .top = true }, limits);
+    try std.testing.expect(big.eql(.{ .x = 50, .y = 80, .width = 250, .height = 120 }));
+
+    // without hints a window never collapses below one pixel.
+    const tiny = resizeBox(start, 1000, 0, .{ .left = true, .top = true }, .{});
+    try std.testing.expectEqual(@as(i32, 1), tiny.width);
+    try std.testing.expectEqual(@as(i32, 299), tiny.x);
 }

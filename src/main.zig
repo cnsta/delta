@@ -12,6 +12,7 @@ const Config = @import("Config.zig");
 const Delta = @import("Delta.zig");
 const Loop = @import("Loop.zig");
 const OutputHead = @import("OutputHead.zig");
+const Libinput = @import("Libinput.zig");
 
 pub const std_options = @import("log.zig").std_options;
 
@@ -20,6 +21,8 @@ const wm_version_max = 6;
 const xkb_bindings_version = 3;
 const layer_shell_version = 1;
 const output_manager_version_max = 4;
+const input_manager_version_max = 2;
+const libinput_config_version_max = 2;
 
 const Globals = struct {
     window_manager: ?*river.WindowManagerV1 = null,
@@ -29,6 +32,8 @@ const Globals = struct {
     viewporter: ?*wp.Viewporter = null,
     single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
     output_manager: ?struct { name: u32, version: u32 } = null,
+    input_manager: ?struct { name: u32, version: u32 } = null,
+    libinput_config: ?struct { name: u32, version: u32 } = null,
 };
 
 const child_environment = [_][2][]const u8{
@@ -44,6 +49,7 @@ test {
     _ = Loop;
     _ = @import("Output.zig");
     _ = OutputHead;
+    _ = Libinput;
     _ = @import("Seat.zig");
     _ = @import("Window.zig");
     _ = @import("Workspace.zig");
@@ -140,6 +146,19 @@ pub fn main(init: std.process.Init) !void {
         Delta.instance.output_manager = manager;
     } else {
         std.log.info("zwlr_output_manager_v1 unavailable; delctl outputs will lack modes", .{});
+    }
+
+    if (globals.input_manager) |global| {
+        const manager = try registry.bind(global.name, river.InputManagerV1, global.version);
+        manager.setListener(?*anyopaque, Libinput.inputManagerListener, null);
+        Delta.instance.input_manager = manager;
+    }
+    if (globals.libinput_config) |global| {
+        const config = try registry.bind(global.name, river.LibinputConfigV1, global.version);
+        config.setListener(?*anyopaque, Libinput.configListener, null);
+        Delta.instance.libinput_config = config;
+    } else {
+        std.log.info("river_libinput_config_v1 unavailable; .input.touchpad is ignored", .{});
     }
 
     if (globals.layer_shell == null) {
@@ -243,6 +262,15 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
                     ev.version, version,
                 });
                 globals.output_manager = .{ .name = ev.name, .version = version };
+            } else if (std.mem.orderZ(u8, river.InputManagerV1.interface.name, ev.interface) == .eq) {
+                const version = @min(ev.version, input_manager_version_max);
+                globals.input_manager = .{ .name = ev.name, .version = version };
+            } else if (std.mem.orderZ(u8, river.LibinputConfigV1.interface.name, ev.interface) == .eq) {
+                const version = @min(ev.version, libinput_config_version_max);
+                std.log.info("river_libinput_config_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, version,
+                });
+                globals.libinput_config = .{ .name = ev.name, .version = version };
             } else if (std.mem.orderZ(u8, wl.Compositor.interface.name, ev.interface) == .eq) {
                 globals.compositor = registry.bind(ev.name, wl.Compositor, 4) catch
                     fatal("Out of memory.", .{});

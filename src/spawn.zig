@@ -50,6 +50,12 @@ pub fn spawn(argv: []const []const u8) void {
     };
     posix.sigaction(posix.SIG.PIPE, &dfl, null);
 
+    // river hands delta a few fds without FD_CLOEXEC (its udmabuf and an
+    // llvmpipe memfd). Keep them, and anything of delta's own, out of the
+    // programs it starts.
+    const linux = std.os.linux;
+    _ = linux.close_range(3, std.math.maxInt(linux.fd_t), .{ .UNSHARE = false, .CLOEXEC = false });
+
     for (candidates) |path| {
         _ = posix.system.execve(path, child_argv.ptr, env_block.slice.ptr);
     }

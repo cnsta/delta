@@ -65,6 +65,7 @@ resizing: bool = false,
 tiled_informed: bool = false,
 float: bool = false,
 float_box: geom.Rect = geom.Rect.zero,
+resize_anchor: rules.Edges = .{},
 
 identifier_buf: [32]u8 = undefined,
 identifier_len: u8 = 0,
@@ -94,7 +95,7 @@ pub const FullscreenRequest = union(enum) {
 pub const PointerRequest = union(enum) {
     none,
     move: struct { seat: *Seat },
-    resize: struct { seat: *Seat },
+    resize: struct { seat: *Seat, edges: ?rules.Edges },
 };
 
 pub fn identifier(window: *const Window) []const u8 {
@@ -223,9 +224,10 @@ pub fn syncPosition(window: *Window) void {
     if (window.motion.done(now, duration)) window.motion.settle();
     if (window.desktop_offset.done(now, duration)) window.desktop_offset.settle();
 
+    const anchor = window.anchorOffset();
     const at: geom.Point = .{
-        .x = origin.x + local.x + desktop.x,
-        .y = origin.y + local.y + desktop.y,
+        .x = origin.x + local.x + desktop.x + anchor.x,
+        .y = origin.y + local.y + desktop.y + anchor.y,
     };
     if (window.placed) |last| {
         if (last.eql(at)) return;
@@ -233,6 +235,16 @@ pub fn syncPosition(window: *Window) void {
 
     window.node.setPosition(at.x, at.y);
     window.placed = at;
+}
+
+fn anchorOffset(window: *const Window) geom.Point {
+    if (!window.float or window.fullscreen != null) return geom.Point.zero;
+    if (!window.sized() or window.slot.width <= 0) return geom.Point.zero;
+
+    return .{
+        .x = if (window.resize_anchor.left) window.slot.width - window.width else 0,
+        .y = if (window.resize_anchor.top) window.slot.height - window.height else 0,
+    };
 }
 
 pub fn syncFade(window: *Window) void {
@@ -464,6 +476,7 @@ pub fn toggleFloat(window: *Window) void {
 pub fn setFloat(window: *Window, on: bool) void {
     if (window.float == on) return;
     window.float = on;
+    window.resize_anchor = .{};
     wm.ipc_dirty = true;
 
     const ws = window.workspace orelse return;
@@ -524,6 +537,7 @@ pub fn moveFloat(window: *Window, dx: i32, dy: i32) void {
 }
 
 pub fn resizeFloat(window: *Window, dx: i32, dy: i32) void {
+    window.resize_anchor = .{};
     window.float_box.width = @max(1, window.float_box.width + dx);
     window.float_box.height = @max(1, window.float_box.height + dy);
 }
@@ -699,7 +713,7 @@ pub fn manage(window: *Window) void {
     switch (window.pointer_request) {
         .none => {},
         .move => |args| if (window.visible()) args.seat.pointerMove(window),
-        .resize => |args| if (window.visible()) args.seat.pointerResize(window),
+        .resize => |args| if (window.visible()) args.seat.pointerResize(window, args.edges),
     }
     window.pointer_request = .none;
 
@@ -771,9 +785,15 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
         },
 
         .pointer_resize_requested => |args| if (args.seat) |seat| {
-            window.pointer_request = .{ .resize = .{
-                .seat = Seat.fromObj(seat),
-            } };
+            const e = args.edges;
+            const edges: rules.Edges = .{ .top = e.top, .bottom = e.bottom, .left = e.left, .right = e.right };
+            window.pointer_request = .{
+                .resize = .{
+                    .seat = Seat.fromObj(seat),
+                    // river promises at least one edge: don't trust an empty one.
+                    .edges = if (edges.eql(.{})) null else edges,
+                },
+            };
         },
 
         // TODO: touchscreen move/resize (v6)
