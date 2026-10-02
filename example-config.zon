@@ -23,6 +23,21 @@
         // and XCURSOR_THEME/XCURSOR_SIZE for programs delta spawns, e.g.
         // .cursor = .{ .warp = .focus, .theme = "Adwaita", .size = 24 },
         .cursor = .{ .warp = .focus },
+        // Touchpads (devices that can tap). Unset fields keep libinput's
+        // default. Also: .tap_button_map (.lrm/.lmr), .drag, .drag_lock
+        // (.disabled/.timeout/.sticky), .three_finger_drag
+        // (.disabled/.three_fingers/.four_fingers), .scroll_method
+        // (.none/.two_finger/.edge), .clickfinger_button_map, .dwtp,
+        // .middle_emulation, .left_handed, .send_events
+        // (.enabled/.disabled/.disabled_on_external_mouse), .accel_profile
+        // (.flat/.adaptive).
+        // .touchpad = .{
+        //     .tap = true,
+        //     .natural_scroll = true,
+        //     .dwt = true,
+        //     .click_method = .clickfinger,
+        //     .accel_speed = 0.2, // -1 to 1
+        // },
     },
 
     .layout = .{
