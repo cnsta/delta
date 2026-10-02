@@ -346,6 +346,30 @@ pub fn resize(window: *Window, dx: i32, dy: i32) void {
     }
 }
 
+pub fn resizeEdge(window: *Window, dx: i32, dy: i32, edges: rules.Edges) void {
+    if (dx != 0) {
+        const side: ?u1 = if (edges.left) 1 else if (edges.right) 0 else null;
+        if (splitBeside(window, .vertical, side) orelse nearest(window, .vertical)) |branch| {
+            applyRatio(branch, ratioDelta(dx, branch.rect.width));
+        }
+    }
+    if (dy != 0) {
+        const side: ?u1 = if (edges.top) 1 else if (edges.bottom) 0 else null;
+        if (splitBeside(window, .horizontal, side) orelse nearest(window, .horizontal)) |branch| {
+            applyRatio(branch, ratioDelta(dy, branch.rect.height));
+        }
+    }
+}
+
+fn splitBeside(window: *Window, want: Split, index: ?u1) ?*Branch {
+    const i = index orelse return null;
+    var node: Node = .{ .window = window };
+    while (parentOf(node)) |b| : (node = .{ .branch = b }) {
+        if (b.split == want and indexOf(b, node) == i) return b;
+    }
+    return null;
+}
+
 fn ratioDelta(pixels: i32, extent: i32) f32 {
     if (extent <= 0) return 0;
     return @as(f32, @floatFromInt(pixels)) / @as(f32, @floatFromInt(extent));
@@ -692,6 +716,54 @@ test "resize: dragging right always grows the left/top child and shrinks the rig
     root.ratio = 0.5;
     resize(&right, -100, 0);
     try std.testing.expect(root.ratio < 0.5);
+}
+
+test "resizeEdge moves the split on the dragged side" {
+    rules.useDefaultConfig();
+
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+
+    // [ a | [ b | c ] ]
+    var inner: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &b }, .{ .window = &c } },
+        .split = .vertical,
+        .rect = .{ .x = 500, .y = 0, .width = 500, .height = 500 },
+    };
+    var root: Branch = .{
+        .parent = null,
+        .children = .{ .{ .window = &a }, .{ .branch = &inner } },
+        .split = .vertical,
+        .rect = .{ .x = 0, .y = 0, .width = 1000, .height = 500 },
+    };
+    inner.parent = &root;
+    a.branch = &root;
+    b.branch = &inner;
+    c.branch = &inner;
+
+    // b's left edge is the root split: dragging it left moves that split left.
+    resizeEdge(&b, -100, 0, .{ .left = true, .top = true });
+    try std.testing.expect(root.ratio < 0.5);
+    try std.testing.expectEqual(@as(f32, 0.5), inner.ratio);
+
+    root.ratio = 0.5;
+    // b's right edge is the inner split.
+    resizeEdge(&b, 100, 0, .{ .right = true, .top = true });
+    try std.testing.expect(inner.ratio > 0.5);
+    try std.testing.expectEqual(@as(f32, 0.5), root.ratio);
+
+    inner.ratio = 0.5;
+    // a has nothing on its left, so its nearest split moves instead.
+    resizeEdge(&a, 100, 0, .{ .left = true, .bottom = true });
+    try std.testing.expect(root.ratio > 0.5);
+
+    root.ratio = 0.5;
+    // no horizontal split anywhere: vertical motion is ignored.
+    resizeEdge(&c, 0, 100, .{ .left = true, .bottom = true });
+    try std.testing.expectEqual(@as(f32, 0.5), root.ratio);
+    try std.testing.expectEqual(@as(f32, 0.5), inner.ratio);
 }
 
 fn testWindow() Window {

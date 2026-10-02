@@ -258,9 +258,15 @@ pub fn manage(seat: *Seat) void {
             const dy = seat.op_dy - args.applied_dy;
 
             if (args.window.float) {
-                args.window.resizeFloat(dx, dy);
+                if (args.start.width > 0) args.window.float_box = rules.resizeBox(
+                    args.start,
+                    seat.op_dx,
+                    seat.op_dy,
+                    args.edges,
+                    args.window.limits,
+                );
             } else {
-                Eddy.resize(args.window, dx, dy);
+                Eddy.resizeEdge(args.window, dx, dy, args.edges);
             }
 
             args.applied_dx = seat.op_dx;
@@ -319,6 +325,8 @@ pub const Op = union(enum) {
     move: Move,
     resize: struct {
         window: *Window,
+        edges: rules.Edges,
+        start: geom.Rect,
         applied_dx: i32 = 0,
         applied_dy: i32 = 0,
     },
@@ -578,7 +586,7 @@ pub fn startPointerMove(seat: *Seat) void {
 
 pub fn startPointerResize(seat: *Seat) void {
     const window = seat.hovered orelse return;
-    seat.pointerResize(window);
+    seat.pointerResize(window, null);
 }
 
 pub fn pointerMove(seat: *Seat, window: *Window) void {
@@ -592,15 +600,39 @@ pub fn pointerMove(seat: *Seat, window: *Window) void {
     seat.op_started = wm.millis();
 }
 
-pub fn pointerResize(seat: *Seat, window: *Window) void {
+pub fn pointerResize(seat: *Seat, window: *Window, edges: ?rules.Edges) void {
     if (seat.op != .none) return;
+
+    const chosen = edges orelse seat.grabbedCorner(window);
 
     _ = seat.focus(window);
     seat.obj.opStartPointer();
-    seat.op = .{ .resize = .{ .window = window } };
+    seat.op = .{ .resize = .{
+        .window = window,
+        .edges = chosen,
+        .start = window.float_box,
+    } };
+    if (window.float) window.resize_anchor = chosen;
     seat.op_dx = 0;
     seat.op_dy = 0;
     seat.op_started = wm.millis();
+}
+
+fn grabbedCorner(seat: *const Seat, window: *const Window) rules.Edges {
+    const fallback: rules.Edges = .{ .right = true, .bottom = true };
+    if (!seat.pointer_known) return fallback;
+
+    const ws = window.workspace orelse return fallback;
+    const output = ws.output orelse return fallback;
+    if (window.slot.width <= 0 or window.slot.height <= 0) return fallback;
+
+    const global: geom.Rect = .{
+        .x = output.x + window.slot.x,
+        .y = output.y + window.slot.y,
+        .width = window.slot.width,
+        .height = window.slot.height,
+    };
+    return rules.resizeEdges(global, seat.pointer);
 }
 
 // -- key repeat --------------------------------------------------------
