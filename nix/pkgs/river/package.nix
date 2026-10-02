@@ -47,7 +47,10 @@
 
     patches =
       (prev.patches or [])
-      ++ [./wlroots-xwm-reclaim-selection-on-focus.patch];
+      ++ [
+        ./wlroots-xwm-reclaim-selection-on-focus.patch
+        ./wlroots-debug-dmabuf-feedback.patch
+      ];
   });
 in
   stdenv.mkDerivation (finalAttrs: {
@@ -64,13 +67,7 @@ in
 
     deps = callPackage ./build.zig.zon.nix {};
 
-    patches = [
-      ./river-hdr-output.patch
-      # TEMPORARY: logs every surface dmabuf feedback the scene sends
-      # ("dmabuf-feedback-debug" in the journal). A moving window keeps
-      # getting new ones, which exhausted byt's fds. Remove once fixed.
-      ./wlroots-debug-dmabuf-feedback.patch
-    ];
+    patches = [./river-hdr-output.patch];
 
     nativeBuildInputs =
       [
