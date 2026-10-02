@@ -44,6 +44,38 @@ pub const Input = struct {
 
     cursor: Cursor = .{},
     drag_threshold: i32 = 10,
+
+    touchpad: Touchpad = .{},
+};
+
+pub const Touchpad = struct {
+    tap: ?bool = null,
+    tap_button_map: ?ButtonMap = null,
+    drag: ?bool = null,
+    drag_lock: ?DragLock = null,
+    three_finger_drag: ?ThreeFingerDrag = null,
+
+    natural_scroll: ?bool = null,
+    scroll_method: ?ScrollMethod = null,
+    click_method: ?ClickMethod = null,
+    clickfinger_button_map: ?ButtonMap = null,
+
+    dwt: ?bool = null,
+    dwtp: ?bool = null,
+    middle_emulation: ?bool = null,
+    left_handed: ?bool = null,
+    send_events: ?SendEvents = null,
+
+    accel_profile: ?AccelProfile = null,
+    accel_speed: ?f64 = null,
+
+    pub const ButtonMap = enum { lrm, lmr };
+    pub const DragLock = enum { disabled, timeout, sticky };
+    pub const ThreeFingerDrag = enum { disabled, three_fingers, four_fingers };
+    pub const ScrollMethod = enum { none, two_finger, edge };
+    pub const ClickMethod = enum { none, button_areas, clickfinger };
+    pub const SendEvents = enum { enabled, disabled, disabled_on_external_mouse };
+    pub const AccelProfile = enum { flat, adaptive };
 };
 
 pub const Cursor = struct {
@@ -242,6 +274,17 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
         return true;
     }
 
+    if (config.input.touchpad.accel_speed) |speed| {
+        if (!(speed >= -1 and speed <= 1)) {
+            report.* = try std.fmt.allocPrint(
+                gpa,
+                "input.touchpad.accel_speed must be between -1 and 1, found {d}",
+                .{speed},
+            );
+            return true;
+        }
+    }
+
     if (config.gaps.between < 0 or config.gaps.edge < 0 or config.border.width < 0) {
         report.* = try std.fmt.allocPrint(gpa, "gaps and border width must not be negative", .{});
         return true;
@@ -396,6 +439,41 @@ test "a cursor theme parses as a sentinel string" {
     try std.testing.expectEqualStrings("Bibata-Modern-Ice", theme);
     try std.testing.expectEqual(@as(u8, 0), theme.ptr[theme.len]);
     try std.testing.expectEqual(@as(u32, 32), loaded.config.input.cursor.size);
+}
+
+test "touchpad settings parse, and unset ones stay null" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{ .input = .{ .touchpad = .{
+        \\    .tap = true,
+        \\    .natural_scroll = true,
+        \\    .click_method = .clickfinger,
+        \\    .drag_lock = .sticky,
+        \\    .accel_speed = 0.25,
+        \\} } }
+    , &report)).?;
+    defer loaded.deinit();
+
+    const touchpad = loaded.config.input.touchpad;
+    try std.testing.expectEqual(true, touchpad.tap.?);
+    try std.testing.expectEqual(true, touchpad.natural_scroll.?);
+    try std.testing.expectEqual(Touchpad.ClickMethod.clickfinger, touchpad.click_method.?);
+    try std.testing.expectEqual(Touchpad.DragLock.sticky, touchpad.drag_lock.?);
+    try std.testing.expectEqual(@as(f64, 0.25), touchpad.accel_speed.?);
+    try std.testing.expect(touchpad.dwt == null);
+    try std.testing.expect(touchpad.scroll_method == null);
+}
+
+test "touchpad accel_speed is range checked" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    try std.testing.expect(try parse(gpa, ".{ .input = .{ .touchpad = .{ .accel_speed = 1.5 } } }", &report) == null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "accel_speed") != null);
 }
 
 test "strings are owned by the arena" {
