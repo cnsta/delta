@@ -16,6 +16,7 @@ const protocol = @import("ipc/protocol.zig");
 
 const Output = @import("Output.zig");
 const OutputHead = @import("OutputHead.zig");
+const Libinput = @import("Libinput.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
@@ -39,10 +40,14 @@ compositor: ?*wl.Compositor = null,
 viewporter: ?*wp.Viewporter = null,
 single_pixel: ?*wp.SinglePixelBufferManagerV1 = null,
 output_manager: ?*zwlr.OutputManagerV1 = null,
+input_manager: ?*river.InputManagerV1 = null,
+libinput_config: ?*river.LibinputConfigV1 = null,
 locked_applied: ?bool = null,
 
 outputs: wl.list.Head(Output, .link),
 heads: wl.list.Head(OutputHead, .link),
+libinput_devices: wl.list.Head(Libinput, .link),
+input_devices: wl.list.Head(Libinput.InputDevice, .link),
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 active_seat: ?*Seat = null,
@@ -126,6 +131,8 @@ pub fn init(
 
         .outputs = undefined,
         .heads = undefined,
+        .libinput_devices = undefined,
+        .input_devices = undefined,
         .windows = undefined,
         .seats = undefined,
         .workspaces = undefined,
@@ -134,6 +141,8 @@ pub fn init(
     instance.now = instance.sampleClock();
     instance.outputs.init();
     instance.heads.init();
+    instance.libinput_devices.init();
+    instance.input_devices.init();
     instance.windows.init();
     instance.seats.init();
     instance.workspaces.init();
@@ -329,6 +338,7 @@ pub fn reload(delta: *Delta) void {
             seat.applyCursorTheme();
         }
         delta.exportCursorEnv();
+        Libinput.applyAll();
 
         delta.dirty = true;
 
@@ -367,6 +377,8 @@ pub fn deinit(delta: *Delta) void {
         ws.maybeDestroy();
     }
     while (delta.heads.first()) |head| head.destroy();
+    while (delta.libinput_devices.first()) |device| device.destroy();
+    while (delta.input_devices.first()) |device| device.destroy();
 
     delta.config_arena.deinit();
     delta.child_env.deinit();
