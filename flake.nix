@@ -21,6 +21,11 @@
       };
     };
 
+    river = {
+      url = "git+https://codeberg.org/river/river?ref=main&shallow=1";
+      flake = false;
+    };
+
     levee = {
       url = "git+https://git.cnst.dev/cnst/levee.git";
       inputs = {
@@ -39,6 +44,7 @@
     zon2nix,
     systems,
     levee,
+    river,
     ...
   }: let
     inherit (nixpkgs) lib legacyPackages;
@@ -55,14 +61,14 @@
     });
 
     packages = forAllPlatforms (pkgs: let
-      scope = pkgs.callPackage ./nix/pkgs {};
+      scope = pkgs.callPackage ./nix/pkgs {riverSrc = river;};
     in {
       inherit (scope) river delta-wm;
       default = scope.delta-wm;
     });
 
     overlays.default = final: _prev: let
-      scope = final.callPackage ./nix/pkgs {};
+      scope = final.callPackage ./nix/pkgs {riverSrc = river;};
     in {
       inherit (scope) delta-wm river;
     };
@@ -119,6 +125,7 @@
       import ./nix/nixosModule.nix (nixosArgs
         // {
           leveePackage = levee.packages.${pkgs.stdenv.hostPlatform.system}.default;
+          riverSrc = river;
         });
     nixosModules.default = self.nixosModules.river;
   };

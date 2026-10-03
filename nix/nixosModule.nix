@@ -3,6 +3,7 @@
   lib,
   pkgs,
   leveePackage,
+  riverSrc,
   ...
 }: let
   inherit
@@ -17,7 +18,7 @@
 
   cfg = config.programs.river-delta;
 
-  riverPkgs = pkgs.callPackage ./pkgs {};
+  riverPkgs = pkgs.callPackage ./pkgs {inherit riverSrc;};
 
   systemctl = "${pkgs.systemd}/bin/systemctl";
   dbusUpdate = "${pkgs.dbus}/bin/dbus-update-activation-environment";

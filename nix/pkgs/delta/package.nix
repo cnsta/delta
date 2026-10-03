@@ -9,7 +9,7 @@
   pkg-config,
   installShellFiles,
   linuxHeaders,
-  callPackage,
+  zigDeps,
 }:
 stdenv.mkDerivation (finalAttrs: {
   pname = "delta";
@@ -26,7 +26,11 @@ stdenv.mkDerivation (finalAttrs: {
     ];
   };
 
-  deps = callPackage ./build.zig.zon.nix {};
+  deps = zigDeps {
+    name = "delta";
+    zon = ../../../build.zig.zon;
+    lock = ./build.zig.zon.nix;
+  };
 
   nativeBuildInputs = [
     zig

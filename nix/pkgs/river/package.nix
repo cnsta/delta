@@ -1,10 +1,9 @@
-# Taken from [dmkhitaryan](https://github.com/dmkhitaryan/river-next-nix-module/blob/main/river-next.nix)
+# Built upon code from [dmkhitaryan](https://github.com/dmkhitaryan/river-next-nix-module/blob/main/river-next.nix)
 {
   lib,
   stdenv,
-  callPackage,
-  fetchFromGitLab,
-  fetchFromCodeberg,
+  riverSrc,
+  zigDeps,
   libGL,
   libx11,
   libevdev,
@@ -26,17 +25,9 @@
   withManpages ? true,
   xwaylandSupport ? true,
   vulkanSupport ? true,
-}: let
-  wlroots_0_20_1 = wlroots_0_20.overrideAttrs (new: prev: {
-    version = "0.20.1";
-    src = fetchFromGitLab {
-      domain = "gitlab.freedesktop.org";
-      owner = "wlroots";
-      repo = "wlroots";
-      tag = new.version;
-      hash = "sha256-uuc1dn13FXvFSBvE3+QOi35rLJZmWIUst64oaXGdPFk=";
-    };
-
+}:
+assert lib.versionAtLeast wlroots_0_20.version "0.20.2"; let
+  wlroots_0_20' = wlroots_0_20.overrideAttrs (prev: {
     buildInputs =
       (prev.buildInputs or [])
       ++ lib.optionals vulkanSupport [vulkan-headers vulkan-loader];
@@ -49,23 +40,27 @@
       (prev.patches or [])
       ++ [
         ./wlroots-xwm-reclaim-selection-on-focus.patch
-        ./wlroots-debug-dmabuf-feedback.patch
       ];
   });
 in
   stdenv.mkDerivation (finalAttrs: {
     pname = "river-next";
-    version = "0.5.0-dev";
+    version = lib.pipe "${riverSrc}/build.zig.zon" [
+      builtins.readFile
+      (builtins.split ''\.version = "([^"]+)"'')
+      (builtins.filter builtins.isList)
+      builtins.head
+      builtins.head
+    ];
     outputs = ["out"] ++ lib.optionals withManpages ["man"];
 
-    src = fetchFromCodeberg {
-      owner = "river";
-      repo = "river";
-      rev = "fd5ea7fe823cda6db7411871cac600a0ebd3b154";
-      hash = "sha256-VScFaKC5q4QhABqPYC1wS6aqKOlhi5MK6CMczERZO5M=";
-    };
+    src = riverSrc;
 
-    deps = callPackage ./build.zig.zon.nix {};
+    deps = zigDeps {
+      name = "river";
+      zon = "${riverSrc}/build.zig.zon";
+      lock = ./build.zig.zon.nix;
+    };
 
     patches = [./river-hdr-output.patch];
 
@@ -88,7 +83,7 @@ in
         udev
         wayland
         wayland-protocols
-        wlroots_0_20_1
+        wlroots_0_20'
       ]
       ++ lib.optional xwaylandSupport libx11;
 
@@ -112,7 +107,7 @@ in
     passthru = {
       providedSessions = ["river"];
       inherit vulkanSupport;
-      wlroots = wlroots_0_20_1;
+      wlroots = wlroots_0_20';
     };
 
     meta = {

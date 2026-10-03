@@ -47,21 +47,40 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1790480522,
-        "narHash": "sha256-d3hOIhc3atvdRbTI+jZygt5ld0eQKfgBjhQ/VKpV3dM=",
-        "rev": "8d5d270900d3fc75655ea2d9d248b234f6631439",
+        "lastModified": 1790769526,
+        "narHash": "sha256-6j4yqqBUvIbBn29k0y/2jqlv/YJd8CRkTBYhfm5Z/8c=",
+        "rev": "c9fe7d12cd78d1adcd12dd15e24432dde5b155a0",
         "type": "tarball",
-        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1080219.8d5d270900d3/nixexprs.tar.zst?lastModified=1790480522&rev=8d5d270900d3fc75655ea2d9d248b234f6631439"
+        "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.11pre1082837.c9fe7d12cd78/nixexprs.tar.zst?lastModified=1790769526&rev=c9fe7d12cd78d1adcd12dd15e24432dde5b155a0"
       },
       "original": {
         "type": "tarball",
         "url": "https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.zst"
       }
     },
+    "river": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790171129,
+        "narHash": "sha256-VScFaKC5q4QhABqPYC1wS6aqKOlhi5MK6CMczERZO5M=",
+        "ref": "main",
+        "rev": "fd5ea7fe823cda6db7411871cac600a0ebd3b154",
+        "shallow": true,
+        "type": "git",
+        "url": "https://codeberg.org/river/river"
+      },
+      "original": {
+        "ref": "main",
+        "shallow": true,
+        "type": "git",
+        "url": "https://codeberg.org/river/river"
+      }
+    },
     "root": {
       "inputs": {
         "levee": "levee",
         "nixpkgs": "nixpkgs",
+        "river": "river",
         "systems": "systems",
         "zig": "zig",
         "zon2nix": "zon2nix"
@@ -93,11 +112,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1790425511,
-        "narHash": "sha256-8UZ7y0D5tWvQ9/fsVmWv41feC2UZI/Pzxk9jf2AJPoM=",
+        "lastModified": 1790988737,
+        "narHash": "sha256-b55etI4Uxu+WHhYZXym3HPIz63ipO9lqwJLAphjqtTc=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "95d96b17b711144776e466408775aa2e2c56a54a",
+        "rev": "dcffc7a25ed2cbbc7c1c3c448c312abf46ae6cb8",
         "type": "github"
       },
       "original": {
@@ -106,23 +125,69 @@
         "type": "github"
       }
     },
+    "zig_2": {
+      "inputs": {
+        "nixpkgs": [
+          "zon2nix",
+          "nixpkgs"
+        ],
+        "zon2nix": "zon2nix_2"
+      },
+      "locked": {
+        "lastModified": 1790983248,
+        "narHash": "sha256-fjtjxWEofW5cbzXm3SqvjC2QZIbtp3lij2k8e1Jmj0w=",
+        "ref": "refs/heads/main",
+        "rev": "1a73bc5e8ae4d0223fefbd00afc58fe0b7f7e718",
+        "revCount": 1734,
+        "type": "git",
+        "url": "https://git.jcollie.dev/jeff/zig-overlay.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://git.jcollie.dev/jeff/zig-overlay.git"
+      }
+    },
     "zon2nix": {
       "inputs": {
         "nixpkgs": [
           "nixpkgs"
-        ]
+        ],
+        "zig": "zig_2"
       },
       "locked": {
-        "lastModified": 1789872114,
-        "narHash": "sha256-yvn1xRRAR2IHuKqejmngftjBm/x/h/RspOg0ol4B5dw=",
+        "lastModified": 1790983378,
+        "narHash": "sha256-RB1SiCcumk7Y9NkBKJDq/Hg0NLyCmX/TX02EXp7QRco=",
         "owner": "jcollie",
         "repo": "zon2nix",
-        "rev": "723bddc9c51c5873965a17f922e4139d587764c1",
+        "rev": "d1c869946e98c380ff474c6bd30e2fe2f5110473",
         "type": "github"
       },
       "original": {
         "owner": "jcollie",
         "ref": "main",
+        "repo": "zon2nix",
+        "type": "github"
+      }
+    },
+    "zon2nix_2": {
+      "inputs": {
+        "nixpkgs": [
+          "zon2nix",
+          "zig",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790583033,
+        "narHash": "sha256-Eo3hR521Yc2Gsqw7m/aqd5sn3/qi0XoSpJBIPPIYKkg=",
+        "owner": "jcollie",
+        "repo": "zon2nix",
+        "rev": "8e91c0d44aa49d0ac415f7e3046662e9aa754335",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jcollie",
+        "ref": "v0.9.0",
         "repo": "zon2nix",
         "type": "github"
       }
