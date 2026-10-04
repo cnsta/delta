@@ -97,7 +97,9 @@
     " -c ${pkgs.writeText "kanshi-config" cfg.kanshi.config}";
 
   leveeLockCmd =
-    "${pkgs.coreutils}/bin/sleep 1 && ${cfg.levee.package}/bin/levee"
+    "${pkgs.coreutils}/bin/sleep 1 && ${cfg.levee.package}/bin/levee -fork-on-lock"
+    + " -fade-duration ${toString cfg.levee.idle.fadeDuration}"
+    + " -fade-end ${toString (cfg.levee.idle.blankTimeout - 1)}"
     + optionalString (cfg.levee.idle.extraArgs != [])
     (" " + lib.concatStringsSep " " cfg.levee.idle.extraArgs);
 
@@ -293,6 +295,17 @@ in {
             locked by then, covers a manual lock (e.g. a keybinding) landing
             well before `lockTimeout`, so outputs still blank promptly rather
             than waiting out the full timeout a second time.
+          '';
+        };
+
+        fadeDuration = mkOption {
+          type = types.ints.unsigned;
+          default = 20;
+          description = ''
+            Seconds levee fades to black before wlopm blanks the outputs,
+            capped at `blankTimeout`. Any input snaps back. 0 disables it.
+            A lock levee wasn't started for by swayidle uses levee's
+            defaults (a 20 s fade, black at 20 s).
           '';
         };
 
