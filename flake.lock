@@ -32,11 +32,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791114035,
-        "narHash": "sha256-DvXRnORcaOCprU6oobU0rzhyEpgNMbP1rTuYp5vBafg=",
+        "lastModified": 1791116754,
+        "narHash": "sha256-ft1JQt25y/f5/AX2eGaUsfYESEDBM2W+fk9llZN8X54=",
         "ref": "refs/heads/main",
-        "rev": "7fa1b097c87da1ac6f1c6b1156abf40b0d0c738a",
-        "revCount": 67,
+        "rev": "567e2c22d1e177390bdf040662058a95e53e1e77",
+        "revCount": 68,
         "type": "git",
         "url": "https://git.cnst.dev/cnst/levee.git"
       },

@@ -24,6 +24,7 @@ pub const Branch = struct {
     children: [2]Node,
     split: Split,
     ratio: f32 = 0.5,
+    pinned: bool = false,
 
     rect: geom.Rect = geom.Rect.zero,
 };
@@ -75,16 +76,19 @@ fn walk(node: Node, context: anytype, comptime visit: fn (@TypeOf(context), *Win
 }
 
 pub fn windowAt(layout: *Eddy, point: geom.Point) ?*Window {
-    var node = layout.root orelse return null;
-    while (true) {
-        switch (node) {
-            .window => |w| return w,
-            .branch => |b| {
-                const halves = subdivide(b.rect, b.split, b.ratio);
-                node = if (halves[0].contains(point)) b.children[0] else b.children[1];
-            },
-        }
-    }
+    const tile = layout.tileAt(point) orelse return null;
+    return tile.window;
+}
+
+pub fn leafRect(layout: *const Eddy, window: *Window) geom.Rect {
+    if (!layout.contains(window)) return geom.Rect.zero;
+    return layout.rectOf(.{ .window = window });
+}
+
+fn rectOf(layout: *const Eddy, node: Node) geom.Rect {
+    const parent = parentOf(node) orelse return layout.area;
+    const halves = subdivide(layout.rectOf(.{ .branch = parent }), parent.split, parent.ratio);
+    return halves[indexOf(parent, node)];
 }
 
 pub fn tileAt(layout: *Eddy, point: geom.Point) ?struct {
@@ -98,7 +102,7 @@ pub fn tileAt(layout: *Eddy, point: geom.Point) ?struct {
         switch (node) {
             .window => |w| return .{ .window = w, .rect = rect },
             .branch => |b| {
-                const halves = subdivide(b.rect, b.split, b.ratio);
+                const halves = subdivide(rect, b.split, b.ratio);
                 if (halves[0].contains(point)) {
                     node = b.children[0];
                     rect = halves[0];
@@ -128,7 +132,8 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
     const target = member orelse pointed orelse firstWindow(root);
     if (target == window) return;
 
-    const box = if (target.slot.width > 0) target.slot else layout.area;
+    const tile = layout.leafRect(target);
+    const box = if (tile.width > 0 and tile.height > 0) tile else layout.area;
     const split = splitFor(box);
 
     var before = false;
@@ -140,7 +145,27 @@ pub fn insert(layout: *Eddy, window: *Window, near: ?*Window, cursor: ?geom.Poin
         };
     }
 
-    layout.splitOnto(window, target, split, before);
+    _ = layout.splitOnto(window, target, split, before);
+    layout.orient();
+}
+
+fn orient(layout: *Eddy) void {
+    const root = layout.root orelse return;
+    orientNode(root, layout.area);
+}
+
+fn orientNode(node: Node, rect: geom.Rect) void {
+    const b = switch (node) {
+        .window => return,
+        .branch => |b| b,
+    };
+    if (rect.width == 0 or rect.height == 0) return;
+
+    if (!b.pinned) b.split = splitFor(rect);
+
+    const halves = subdivide(rect, b.split, b.ratio);
+    orientNode(b.children[0], halves[0]);
+    orientNode(b.children[1], halves[1]);
 }
 
 fn splitFor(box: geom.Rect) Split {
@@ -153,7 +178,7 @@ fn splitFor(box: geom.Rect) Split {
     return if (wide) .vertical else .horizontal;
 }
 
-fn splitOnto(layout: *Eddy, window: *Window, target: *Window, split: Split, before: bool) void {
+fn splitOnto(layout: *Eddy, window: *Window, target: *Window, split: Split, before: bool) *Branch {
     const parent = target.branch;
     const index = if (parent) |p| indexOf(p, .{ .window = target }) else 0;
 
@@ -174,6 +199,8 @@ fn splitOnto(layout: *Eddy, window: *Window, target: *Window, split: Split, befo
     } else {
         layout.root = .{ .branch = branch };
     }
+
+    return branch;
 }
 
 pub fn remove(layout: *Eddy, window: *Window) void {
@@ -197,6 +224,8 @@ pub fn remove(layout: *Eddy, window: *Window) void {
 
     wm.gpa.destroy(parent);
     window.branch = null;
+
+    layout.orient();
 }
 
 pub fn toggleSplit(window: *Window) bool {
@@ -206,6 +235,7 @@ pub fn toggleSplit(window: *Window) bool {
         .vertical => .horizontal,
         .horizontal => .vertical,
     };
+    branch.pinned = true;
 
     return true;
 }
@@ -251,7 +281,7 @@ pub fn dropOnto(
     };
 
     layout.remove(window);
-    layout.splitOnto(window, target, zone.split, zone.before);
+    layout.splitOnto(window, target, zone.split, zone.before).pinned = true;
 }
 
 pub fn dropZone(tile: geom.Rect, point: geom.Point) ?Zone {
@@ -290,7 +320,9 @@ pub const Zone = struct {
 // -- arrangement ---------------------------------------------------------
 
 pub fn arrange(layout: *Eddy, area: geom.Rect) void {
+    const resized = !area.size().eql(layout.area.size());
     layout.area = area;
+    if (resized) layout.orient();
 
     const root = layout.root orelse return;
     place(root, area, area);
@@ -917,4 +949,99 @@ test "removing a window outside the tree changes nothing" {
     layout.remove(&y);
     try std.testing.expectEqual(@as(usize, 2), leafCount(&layout));
     try std.testing.expectEqual(@as(usize, 2), leafCount(&other));
+}
+
+test "spawning onto a fresh tile splits it across, never three in a row" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{ .area = .{ .x = 0, .y = 0, .width = 1600, .height = 1000 } };
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+
+    // no arrange in between: every slot is still zero, as with several
+    // windows mapping in one manage.
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    layout.insert(&c, &b, null);
+    defer testFree(&layout);
+
+    const root = layout.root.?.branch;
+    try std.testing.expectEqual(Split.vertical, root.split);
+    try std.testing.expectEqual(Split.horizontal, root.children[1].branch.split);
+}
+
+test "leafRect follows the tree before any arrange" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{ .area = .{ .x = 0, .y = 0, .width = 1600, .height = 1000 } };
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+    var float = testWindow();
+
+    layout.insert(&a, null, null);
+    try std.testing.expectEqual(layout.area, layout.leafRect(&a));
+
+    layout.insert(&b, &a, null);
+    layout.insert(&c, &b, null);
+    defer testFree(&layout);
+
+    try std.testing.expectEqual(geom.Rect{ .x = 0, .y = 0, .width = 800, .height = 1000 }, layout.leafRect(&a));
+    try std.testing.expectEqual(geom.Rect{ .x = 800, .y = 0, .width = 800, .height = 500 }, layout.leafRect(&b));
+    try std.testing.expectEqual(geom.Rect{ .x = 800, .y = 500, .width = 800, .height = 500 }, layout.leafRect(&c));
+    try std.testing.expectEqual(geom.Rect.zero, layout.leafRect(&float));
+
+    try std.testing.expectEqual(&c, layout.windowAt(.{ .x = 1200, .y = 900 }).?);
+    try std.testing.expectEqual(&b, layout.windowAt(.{ .x = 1200, .y = 100 }).?);
+    try std.testing.expectEqual(&a, layout.windowAt(.{ .x = 100, .y = 900 }).?);
+}
+
+test "removing re-orients unpinned splits, pinned ones stay" {
+    rules.useDefaultConfig();
+
+    var layout: Eddy = .{ .area = .{ .x = 0, .y = 0, .width = 1600, .height = 1000 } };
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    layout.insert(&c, &b, null);
+    defer testFree(&layout);
+
+    // [a | [b / c]] minus a: [b / c] now fills the wide area.
+    layout.remove(&a);
+    try std.testing.expectEqual(Split.vertical, layout.root.?.branch.split);
+
+    // A toggled split is the user's choice and survives the next insert.
+    try std.testing.expect(toggleSplit(&b));
+    try std.testing.expectEqual(Split.horizontal, layout.root.?.branch.split);
+    layout.insert(&a, &c, null);
+    try std.testing.expectEqual(Split.horizontal, layout.root.?.branch.split);
+    try std.testing.expect(layout.root.?.branch.pinned);
+}
+
+test "a resize never flips a split" {
+    rules.useDefaultConfig();
+
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 1600, .height = 1000 };
+    var layout: Eddy = .{};
+    var a = testWindow();
+    var b = testWindow();
+    var c = testWindow();
+
+    layout.insert(&a, null, null);
+    layout.insert(&b, &a, null);
+    layout.insert(&c, &b, null);
+    defer testFree(&layout);
+    layout.arrange(area);
+
+    const inner = layout.root.?.branch.children[1].branch;
+    try std.testing.expectEqual(Split.horizontal, inner.split);
+
+    // shrinking a makes [b / c] wider than tall, it stays stacked.
+    resize(&a, -500, 0);
+    layout.arrange(area);
+    try std.testing.expectEqual(Split.horizontal, inner.split);
 }

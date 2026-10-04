@@ -1,6 +1,6 @@
 .{
     .name = .delta,
-    .version = "0.3.3",
+    .version = "0.3.4",
     .fingerprint = 0x9643fed9362163e6,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{

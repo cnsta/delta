@@ -175,11 +175,20 @@ pub fn setWorkspace(window: *Window, target: *Workspace) void {
         window.workspace_link.remove();
     }
 
-    const near = lastTiled(target);
+    const cursor = target.cursor();
+    const pointed = if (cursor) |c| target.layout.windowAt(c) else null;
+    const near = focusedTile(target) orelse pointed orelse lastTiled(target);
 
     window.workspace = target;
     target.windows.append(window);
-    if (!window.float) target.layout.insert(window, near, target.cursor());
+    if (!window.float) target.layout.insert(window, near, cursor);
+}
+
+fn focusedTile(ws: *Workspace) ?*Window {
+    const seat = wm.seatFor(ws) orelse return null;
+    const window = seat.focused orelse return null;
+    if (window.float or !ws.layout.contains(window)) return null;
+    return window;
 }
 
 fn lastTiled(ws: *Workspace) ?*Window {
