@@ -32,6 +32,7 @@ focused: ?*Window = null,
 hovered: ?*Window = null,
 interacted: ?*Window = null,
 focus_resync: bool = false,
+refocus_after_lock: bool = false,
 warp_to: ?*Window = null,
 last_input: Input = .pointer,
 
@@ -207,10 +208,18 @@ pub fn manage(seat: *Seat) void {
         seat.pending.clear();
         seat.repeat_binding = null;
         seat.op_release = false;
+        seat.refocus_after_lock = true;
         return;
     }
 
     seat.revalidateFocus();
+
+    if (seat.refocus_after_lock) {
+        seat.refocus_after_lock = false;
+        const was = seat.focused;
+        seat.dropFocus();
+        _ = seat.focusNoRaise(was);
+    }
 
     switch (seat.layer_focus) {
         .exclusive => seat.dropFocus(),
