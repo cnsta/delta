@@ -96,6 +96,131 @@
     optionalString (cfg.kanshi.config != null)
     " -c ${pkgs.writeText "kanshi-config" cfg.kanshi.config}";
 
+  outputsWhere = pred: lib.attrNames (lib.filterAttrs (_: o: o.enable && pred o) cfg.outputs);
+
+  kanshiOutput = name: let
+    o = cfg.outputs.${name};
+    mode =
+      optionalString o.customMode "--custom "
+      + "${toString o.width}x${toString o.height}"
+      + optionalString (o.refresh != null) "@${toString o.refresh}Hz";
+    body =
+      ["mode ${mode}"]
+      ++ lib.optional (o.position != null) "position ${toString o.position.x},${toString o.position.y}"
+      ++ [
+        "scale ${toString o.scale}"
+        "transform ${o.transform}"
+        "adaptive_sync ${
+          if o.adaptiveSync
+          then "on"
+          else "off"
+        }"
+      ];
+  in
+    if o.enable
+    then ["  output ${name} {"] ++ map (l: "    " + l) body ++ ["  }"]
+    else ["  output ${name} disable"];
+
+  kanshiProfiles = let
+    subsets = lib.foldr (x: acc: acc ++ map (s: [x] ++ s) acc) [[]] (lib.attrNames cfg.outputs);
+  in
+    lib.sort (a: b: lib.length a > lib.length b) (lib.filter (s: s != []) subsets);
+
+  kanshiGenerated =
+    lib.concatMapStringsSep "\n\n" (names:
+      lib.concatStringsSep "\n" (
+        ["profile delta-${lib.concatStringsSep "_" names} {"]
+        ++ lib.concatMap kanshiOutput names
+        ++ ["}"]
+      ))
+    kanshiProfiles
+    + "\n";
+
+  renderBitDepthEnv =
+    if cfg.renderBitDepth == 10
+    then "10"
+    else lib.concatStringsSep "," (outputsWhere (o: o.bitDepth == 10));
+
+  outputModule = {
+    options = {
+      enable =
+        mkEnableOption ''
+          this output. A disabled one is turned off whenever it is connected
+        ''
+        // {default = true;};
+
+      width = mkOption {
+        type = types.ints.positive;
+        example = 2560;
+        description = "Horizontal resolution of the mode.";
+      };
+
+      height = mkOption {
+        type = types.ints.positive;
+        example = 1440;
+        description = "Vertical resolution of the mode.";
+      };
+
+      refresh = mkOption {
+        type = types.nullOr (types.either types.str types.number);
+        default = null;
+        example = "143.99";
+        description = ''
+          Refresh rate in Hz. A string keeps an exact rate such as `"143.99"`.
+          Null lets kanshi pick the mode's highest.
+        '';
+      };
+
+      customMode = mkEnableOption ''
+        a custom mode (kanshi's `mode --custom`), for a resolution or refresh
+        rate the output does not advertise
+      '';
+
+      position = mkOption {
+        type = types.nullOr (types.submodule {
+          options = {
+            x = mkOption {type = types.int;};
+            y = mkOption {type = types.int;};
+          };
+        });
+        default = null;
+        example = {
+          x = 2560;
+          y = 0;
+        };
+        description = "Position in the layout, in logical pixels. Null lets kanshi place it.";
+      };
+
+      scale = mkOption {
+        type = types.number;
+        default = 1;
+        example = 1.25;
+      };
+
+      transform = mkOption {
+        type = types.enum ["normal" "90" "180" "270" "flipped" "flipped-90" "flipped-180" "flipped-270"];
+        default = "normal";
+        example = "270";
+      };
+
+      adaptiveSync = mkEnableOption "adaptive sync (VRR)";
+
+      hdr = mkEnableOption ''
+        HDR on this output (adds it to {option}`programs.river-delta.hdr.outputs`).
+        HDR always renders at 10 bit, whatever `bitDepth` says
+      '';
+
+      bitDepth = mkOption {
+        type = types.enum [8 10];
+        default = 8;
+        description = ''
+          Render format bit depth of this output. 10 reduces banding in
+          gradients even in SDR. See {option}`programs.river-delta.renderBitDepth`.
+        '';
+      };
+    };
+  };
+
   leveeLockCmd =
     "${pkgs.coreutils}/bin/sleep 1 && ${cfg.levee.package}/bin/levee -fork-on-lock"
     + " -fade-duration ${toString cfg.levee.idle.fadeDuration}"
@@ -171,6 +296,24 @@ in {
       '';
     };
 
+    outputs = mkOption {
+      type = types.attrsOf (types.submodule outputModule);
+      default = {};
+      example = lib.literalExpression ''
+        {
+          "DP-3" = { width = 2560; height = 1440; refresh = "143.99"; bitDepth = 10; };
+          "HDMI-A-1" = { width = 1920; height = 1080; position = { x = 2560; y = 0; }; transform = "270"; };
+        }
+      '';
+      description = ''
+        Monitors by connector name. Generates the kanshi config, with one profile
+        for every combination of these outputs that can be connected at once, and
+        sets {option}`hdr.outputs` and the per-output bit depth for river.
+        At most 6 outputs. Set {option}`kanshi.config` to write the kanshi side
+        by hand instead.
+      '';
+    };
+
     windowManager = {
       name = mkOption {
         type = types.str;
@@ -229,7 +372,10 @@ in {
             output DP-3 mode 2560x1440@239.970Hz position 0,0 scale 1
           }
         '';
-        description = "Contents of the kanshi config file. When null, kanshi uses its default search paths.";
+        description = ''
+          Contents of the kanshi config file. Generated from {option}`outputs` when
+          that is set; when null, kanshi uses its default search paths.
+        '';
       };
     };
 
@@ -409,9 +555,24 @@ in {
           service registered, so it could never actually authenticate.
         '';
       }
+      {
+        assertion = lib.length (lib.attrNames cfg.outputs) <= 6;
+        message = ''
+          programs.river-delta.outputs declares more than 6 outputs, which would
+          generate more than 63 kanshi profiles. Write programs.river-delta.kanshi.config
+          by hand instead.
+        '';
+      }
     ];
 
-    programs.river-delta.sessionScript = sessionScript;
+    programs.river-delta = {
+      sessionScript = sessionScript;
+      hdr.outputs = outputsWhere (o: o.hdr);
+      kanshi = mkIf (cfg.outputs != {}) {
+        enable = lib.mkDefault true;
+        config = lib.mkDefault kanshiGenerated;
+      };
+    };
 
     environment.systemPackages =
       [cfg.package cfg.windowManager.package]
@@ -449,7 +610,7 @@ in {
           ["PATH=${cfg.path}"]
           ++ lib.optional (cfg.renderer != null) "WLR_RENDERER=${cfg.renderer}"
           ++ lib.optional (cfg.hdr.outputs != []) "RIVER_HDR=${lib.concatStringsSep "," cfg.hdr.outputs}"
-          ++ lib.optional (cfg.renderBitDepth != 8) "RIVER_RENDER_BIT_DEPTH=${toString cfg.renderBitDepth}";
+          ++ lib.optional (renderBitDepthEnv != "") "RIVER_RENDER_BIT_DEPTH=${renderBitDepthEnv}";
         UnsetEnvironment = "WAYLAND_DISPLAY DISPLAY";
         ExecStopPost = "${systemctl} --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_SESSION_TYPE XDG_SESSION_DESKTOP XDG_CURRENT_DESKTOP";
         Restart = "no";

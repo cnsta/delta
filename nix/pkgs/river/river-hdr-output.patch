@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000..62c0d0e
 --- /dev/null
 +++ b/river/OutputColor.zig
-@@ -0,0 +1,123 @@
+@@ -0,0 +1,128 @@
 +// SPDX-FileCopyrightText: © 2026 The River Developers
 +// SPDX-License-Identifier: GPL-3.0-only
 +
@@ -11,7 +11,7 @@ index 0000000..62c0d0e
 +//! since wlr-output-management has no way to express them:
 +//!
 +//!   RIVER_HDR=DP-3,HDMI-A-1   (or "*" for every output that supports it)
-+//!   RIVER_RENDER_BIT_DEPTH=10 (8 is the default)
++//!   RIVER_RENDER_BIT_DEPTH=10 (every output, or a list like RIVER_HDR)
 +//!
 +//! HDR means BT.2020 primaries with the ST 2084 (PQ) transfer function and
 +//! implies a 10 bit render format. wlr_scene converts SDR and HDR client
@@ -38,17 +38,22 @@ index 0000000..62c0d0e
 +}
 +
 +fn hdrRequested(name: []const u8) bool {
-+    const value = std.c.getenv("RIVER_HDR") orelse return false;
-+    var it = mem.tokenizeAny(u8, mem.span(value), ", ");
-+    while (it.next()) |entry| {
-+        if (mem.eql(u8, entry, "*") or mem.eql(u8, entry, name)) return true;
-+    }
-+    return false;
++    return listed("RIVER_HDR", name, "*");
 +}
 +
-+fn tenBitRequested() bool {
-+    const value = std.c.getenv("RIVER_RENDER_BIT_DEPTH") orelse return false;
-+    return mem.eql(u8, mem.span(value), "10");
++fn tenBitRequested(name: []const u8) bool {
++    return listed("RIVER_RENDER_BIT_DEPTH", name, "10");
++}
++
++/// Whether the comma or space separated list in the environment variable
++/// names this output, or holds "*" or all, which select every output.
++fn listed(variable: [:0]const u8, name: []const u8, all: []const u8) bool {
++    const value = std.c.getenv(variable) orelse return false;
++    var it = mem.tokenizeAny(u8, mem.span(value), ", ");
++    while (it.next()) |entry| {
++        if (mem.eql(u8, entry, "*") or mem.eql(u8, entry, all) or mem.eql(u8, entry, name)) return true;
++    }
++    return false;
 +}
 +
 +fn hdrSupported(wlr_output: *const wlr.Output) bool {
@@ -65,7 +70,7 @@ index 0000000..62c0d0e
 +pub fn apply(wlr_output: *wlr.Output, state: *wlr.Output.State, allow: bool) bool {
 +    const name = mem.span(wlr_output.name);
 +    const hdr = hdrRequested(name);
-+    const ten_bit = tenBitRequested();
++    const ten_bit = tenBitRequested(name);
 +    if (!hdr and !ten_bit) return false;
 +
 +    if (allow and hdr and hdrSupported(wlr_output)) {
@@ -164,4 +169,3 @@ index 630600c..9926cc2 100644
              log.err("failed to prepare new output configuration", .{});
              om.modesetFailed();
              return;
-
