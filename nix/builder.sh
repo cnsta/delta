@@ -62,3 +62,14 @@ if $build; then
   echo "==> building"
   nix build --no-link "$flake#river" "$flake#default"
 fi
+
+echo "==> versions"
+nix eval --raw --impure --expr "
+  let
+    f = builtins.getFlake \"$flake\";
+    s = builtins.currentSystem;
+  in builtins.concatStringsSep \"\" (map (p: \"    \" + p.name + \"\\n\") [
+    f.packages.\${s}.river
+    f.packages.\${s}.default
+    f.inputs.levee.packages.\${s}.default
+  ])"
