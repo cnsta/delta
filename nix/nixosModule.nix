@@ -221,24 +221,45 @@
     };
   };
 
+  wlopmBin = "${cfg.levee.wlopmPackage}/bin/wlopm";
+
+  # levee turns the outputs off itself once its fade is black (timing from its
+  # config.zon), for manual locks too, so the wrapper is what goes on PATH.
+  leveeBin =
+    if !cfg.levee.blankOutputs
+    then cfg.levee.package
+    else
+      pkgs.symlinkJoin {
+        name = "levee-wrapped";
+        paths = [cfg.levee.package];
+        nativeBuildInputs = [pkgs.makeWrapper];
+        postBuild = ''
+          wrapProgram $out/bin/levee \
+            --add-flag -on-black --add-flag ${lib.escapeShellArg "${wlopmBin} --off *"} \
+            --add-flag -on-wake --add-flag ${lib.escapeShellArg "${wlopmBin} --on *"}
+        '';
+      };
+
   leveeLockCmd =
-    "${pkgs.coreutils}/bin/sleep 1 && ${cfg.levee.package}/bin/levee -fork-on-lock"
-    + " -fade-duration ${toString cfg.levee.idle.fadeDuration}"
-    + " -fade-end ${toString (cfg.levee.idle.blankTimeout - 1)}"
+    # -fork-on-lock: swayidle -w waits for every command.
+    "${pkgs.coreutils}/bin/sleep 1 && ${leveeBin}/bin/levee -fork-on-lock"
     + optionalString (cfg.levee.idle.extraArgs != [])
     (" " + lib.concatStringsSep " " cfg.levee.idle.extraArgs);
 
-  isLeveeLocked = "${pkgs.procps}/bin/pgrep -x levee >/dev/null 2>&1";
-
-  wlopmBin = "${cfg.levee.idle.wlopmPackage}/bin/wlopm";
-
   swayidleConfig = pkgs.writeText "swayidle-config" ''
     timeout ${toString cfg.levee.idle.lockTimeout} '${leveeLockCmd}'
-    timeout ${toString (cfg.levee.idle.lockTimeout + cfg.levee.idle.blankTimeout)} '${wlopmBin} --off \*' resume '${wlopmBin} --on \*'
-    timeout ${toString cfg.levee.idle.blankTimeout} '${isLeveeLocked} && ${wlopmBin} --off \*' resume '${wlopmBin} --on \*'
     before-sleep '${leveeLockCmd}'
   '';
 in {
+  imports = let
+    old = name: ["programs" "river-delta" "levee" "idle" name];
+    moved = "Set `.fade` in levee's config.zon (~/.config/levee/config.zon) instead; levee now blanks the outputs itself (programs.river-delta.levee.blankOutputs).";
+  in [
+    (lib.mkRemovedOptionModule (old "blankTimeout") moved)
+    (lib.mkRemovedOptionModule (old "fadeDuration") moved)
+    (lib.mkRenamedOptionModule (old "wlopmPackage") ["programs" "river-delta" "levee" "wlopmPackage"])
+  ];
+
   options.programs.river-delta = {
     enable = mkEnableOption "the river compositor with a systemd-managed session";
 
@@ -414,45 +435,32 @@ in {
         '';
       };
 
+      blankOutputs = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Wrap levee so it turns all outputs off with wlopm once its fade is
+          black and back on at the next input, for idle and manual locks
+          alike. When is up to levee's config.zon (`.fade.end`, default 20
+          idle seconds after locking). The wrapper's flags override
+          `.fade.on_black`/`.fade.on_wake` there.
+        '';
+      };
+
+      wlopmPackage = mkPackageOption pkgs "wlopm" {};
+
       idle = {
         enable = mkEnableOption ''
-          swayidle to lock via levee on inactivity, blank all outputs with
-          wlopm shortly after, and lock again before sleep
+          swayidle to lock via levee on inactivity and before sleep (levee's
+          config.zon times the fade and blanking)
         '';
 
         package = mkPackageOption pkgs "swayidle" {};
-
-        wlopmPackage = mkPackageOption pkgs "wlopm" {};
 
         lockTimeout = mkOption {
           type = types.ints.positive;
           default = 300;
           description = "Seconds of inactivity before levee locks the session.";
-        };
-
-        blankTimeout = mkOption {
-          type = types.ints.positive;
-          default = 20;
-          description = ''
-            Additional seconds of inactivity, past `lockTimeout`, before all
-            outputs are turned off via wlopm (turned back on on any
-            activity). Also, independently, this many seconds after
-            inactivity begins at all if the session turns out to already be
-            locked by then, covers a manual lock (e.g. a keybinding) landing
-            well before `lockTimeout`, so outputs still blank promptly rather
-            than waiting out the full timeout a second time.
-          '';
-        };
-
-        fadeDuration = mkOption {
-          type = types.ints.unsigned;
-          default = 20;
-          description = ''
-            Seconds levee fades to black before wlopm blanks the outputs,
-            capped at `blankTimeout`. Any input snaps back. 0 disables it.
-            A lock levee wasn't started for by swayidle uses levee's
-            defaults (a 20 s fade, black at 20 s).
-          '';
         };
 
         extraArgs = mkOption {
@@ -577,7 +585,7 @@ in {
     environment.systemPackages =
       [cfg.package cfg.windowManager.package]
       ++ lib.optional cfg.kanshi.enable cfg.kanshi.package
-      ++ lib.optional cfg.levee.enable cfg.levee.package
+      ++ lib.optional cfg.levee.enable leveeBin
       ++ cfg.extraPackages;
 
     security.pam.services.levee = mkIf cfg.levee.enable {};
