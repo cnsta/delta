@@ -32,11 +32,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791807736,
-        "narHash": "sha256-3FaJ91p8VnWc1N0pL4mw03r2/qqBU6iIyo4Htr5w6Nk=",
+        "lastModified": 1791975536,
+        "narHash": "sha256-hZXHjQS9Z55q3b5dH4u3aTiAx7ZnV+YfxAdPW3mFjHo=",
         "ref": "refs/heads/main",
-        "rev": "b9bfa2f27d810fab69e6194c3c139338aa64f13a",
-        "revCount": 73,
+        "rev": "e46c58111e06504eae029ae4607b28cdf458fac1",
+        "revCount": 92,
         "type": "git",
         "url": "https://git.cnst.dev/cnst/levee.git"
       },
@@ -61,10 +61,10 @@
     "river": {
       "flake": false,
       "locked": {
-        "lastModified": 1791622468,
-        "narHash": "sha256-KR2eQdnaNA+dz5OY8lXEfZVaPpQEC+aJ4jcIDCDVk1g=",
+        "lastModified": 1791968517,
+        "narHash": "sha256-JXrOkwhHMpATtFXE2BPvGC/JlUN7Ht1hqJFHD6L1fY4=",
         "ref": "main",
-        "rev": "843e75cc0db8307beed3ea5f947fe9f95fa4e470",
+        "rev": "137524036de508090141c18f1d72b9737013646f",
         "shallow": true,
         "type": "git",
         "url": "https://codeberg.org/river/river"
@@ -112,11 +112,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1791635236,
-        "narHash": "sha256-AnEn78XeUUzBKISAhdyD462id4QP7gkn3kbIi9ZB9Pw=",
+        "lastModified": 1791894697,
+        "narHash": "sha256-VoA0Lc/lnsaPxyTN24C4kvmF5Ys8naySwqjyy/kN6jQ=",
         "owner": "mitchellh",
         "repo": "zig-overlay",
-        "rev": "f0acd78ef01f2d5e3471cc01b08022ab4e665898",
+        "rev": "ee6a6d65335b28d1462168b0e90f0ba12a263e44",
         "type": "github"
       },
       "original": {
