@@ -26,6 +26,8 @@
   xwaylandSupport ? true,
   vulkanSupport ? true,
 }:
+assert lib.assertMsg (lib.versionAtLeast zig.version "0.17.1")
+"river needs Zig 0.17.1 or newer, found ${zig.version}: update nixpkgs";
 assert lib.versionAtLeast wlroots_0_20.version "0.20.2"; let
   wlroots_0_20' = wlroots_0_20.overrideAttrs (prev: {
     buildInputs =

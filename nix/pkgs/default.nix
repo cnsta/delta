@@ -1,12 +1,11 @@
 {
   lib,
   newScope,
-  zig_0_16,
+  zig_0_17,
   riverSrc,
 }:
 lib.makeScope newScope (self: {
-  # Pinned until the zig 0.17 migration.
-  zig = zig_0_16;
+  zig = zig_0_17;
   inherit riverSrc;
   zigDeps = self.callPackage ./zig-deps.nix {};
   river = self.callPackage ./river/package.nix {};
