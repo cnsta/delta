@@ -60,6 +60,7 @@ test {
     _ = @import("notify.zig");
     _ = @import("overlay.zig");
     _ = @import("spawn.zig");
+    _ = @import("util/accel_curve.zig");
     _ = @import("util/animation.zig");
     _ = @import("util/color.zig");
     _ = @import("util/geom.zig");
@@ -158,7 +159,7 @@ pub fn main(init: std.process.Init) !void {
         config.setListener(?*anyopaque, Libinput.configListener, null);
         Delta.instance.libinput_config = config;
     } else {
-        std.log.info("river_libinput_config_v1 unavailable; .input.touchpad is ignored", .{});
+        std.log.info("river_libinput_config_v1 unavailable; .input.touchpad and .pointer are ignored", .{});
     }
 
     if (globals.layer_shell == null) {

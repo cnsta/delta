@@ -133,7 +133,7 @@ fn accept(server: *Server) void {
 
         if (syscall.failed(rc)) {
             const err = syscall.errno(rc);
-            if (err != @intFromEnum(linux.E.AGAIN) and err != @intFromEnum(linux.E.INTR)) {
+            if (err != @backingInt(linux.E.AGAIN) and err != @backingInt(linux.E.INTR)) {
                 log.err("accept failed: errno {d}", .{err});
             }
             return;
@@ -247,7 +247,7 @@ fn writeSome(fd: posix.fd_t, bytes: []const u8) ?usize {
     if (!syscall.failed(rc)) return rc;
 
     return switch (syscall.errno(rc)) {
-        @intFromEnum(linux.E.AGAIN), @intFromEnum(linux.E.INTR) => 0,
+        @backingInt(linux.E.AGAIN), @backingInt(linux.E.INTR) => 0,
         else => null,
     };
 }
