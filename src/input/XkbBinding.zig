@@ -31,7 +31,7 @@ pub fn create(
     const binding = wm.gpa.create(XkbBinding) catch fatal("Out of memory.", .{});
     const obj = wm.xkb_bindings.getXkbBinding(
         seat.obj,
-        @intFromEnum(keysym),
+        @backingInt(keysym),
         mods,
     ) catch fatal("Out of memory.", .{});
 
@@ -47,7 +47,7 @@ pub fn create(
 
     const mods_bits: u32 = @bitCast(mods);
     log.debug("xkb binding: keysym 0x{x} mods 0x{x} -> {s}", .{
-        @intFromEnum(keysym), mods_bits, @tagName(action),
+        @backingInt(keysym), mods_bits, @tagName(action),
     });
 }
 
