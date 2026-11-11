@@ -97,9 +97,10 @@ pub const Action = union(enum) {
 
     pub const listing = blk: {
         var text: []const u8 = "";
-        for (std.meta.fields(Action)) |field| {
-            if (std.mem.eql(u8, field.name, "none")) continue;
-            text = text ++ "  " ++ field.name ++ argHint(field.type) ++ "\n";
+        const info = @typeInfo(Action).@"union";
+        for (info.field_names, info.field_types) |name, Payload| {
+            if (std.mem.eql(u8, name, "none")) continue;
+            text = text ++ "  " ++ name ++ argHint(Payload) ++ "\n";
         }
         break :blk text;
     };
@@ -111,9 +112,9 @@ pub const Action = union(enum) {
         return switch (@typeInfo(T)) {
             .@"enum" => |info| blk: {
                 var hint: []const u8 = " <";
-                for (info.fields, 0..) |field, i| {
+                for (info.field_names, 0..) |name, i| {
                     if (i > 0) hint = hint ++ "|";
-                    hint = hint ++ field.name;
+                    hint = hint ++ name;
                 }
                 break :blk hint ++ ">";
             },
@@ -145,7 +146,7 @@ pub const Action = union(enum) {
     pub const Queue = struct {
         pub const capacity = 8;
 
-        buffer: [capacity]Action = [_]Action{.none} ** capacity,
+        buffer: [capacity]Action = @splat(.none),
         head: usize = 0,
         len: usize = 0,
 
@@ -260,9 +261,9 @@ test "fromArgs rejects bad input" {
 }
 
 test "listing covers every action but none" {
-    inline for (std.meta.fields(Action)) |field| {
-        const found = std.mem.indexOf(u8, Action.listing, "  " ++ field.name) != null;
-        try std.testing.expectEqual(!std.mem.eql(u8, field.name, "none"), found);
+    inline for (@typeInfo(Action).@"union".field_names) |name| {
+        const found = std.mem.indexOf(u8, Action.listing, "  " ++ name) != null;
+        try std.testing.expectEqual(!std.mem.eql(u8, name, "none"), found);
     }
     try std.testing.expect(std.mem.indexOf(u8, Action.listing, "focus_direction <left|") != null);
 }

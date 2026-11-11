@@ -56,14 +56,15 @@ pub const Reply = union(enum) {
             else => return error.UnexpectedToken,
         };
 
-        const result: Reply = inline for (@typeInfo(Reply).@"union".fields) |field| {
-            if (!std.mem.eql(u8, field.name, name)) {} else if (field.type == void) {
+        const info = @typeInfo(Reply).@"union";
+        const result: Reply = inline for (info.field_names, info.field_types) |field, Payload| {
+            if (!std.mem.eql(u8, field, name)) {} else if (Payload == void) {
                 if (try source.next() != .object_begin) return error.UnexpectedToken;
                 if (try source.next() != .object_end) return error.UnexpectedToken;
-                break @unionInit(Reply, field.name, {});
+                break @unionInit(Reply, field, {});
             } else {
-                break @unionInit(Reply, field.name, try std.json.innerParse(
-                    field.type,
+                break @unionInit(Reply, field, try std.json.innerParse(
+                    Payload,
                     gpa,
                     source,
                     options,
@@ -248,6 +249,7 @@ test "an ok reply is the bare string ashell expects" {
     defer parsed.deinit();
     try std.testing.expect(parsed.value == .ok);
 
+    // A delta built on 2026-09-26 still sends this form.
     const legacy = try std.json.parseFromSlice(Reply, gpa, "{\"ok\":{}}", .{});
     defer legacy.deinit();
     try std.testing.expect(legacy.value == .ok);

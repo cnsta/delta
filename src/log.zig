@@ -13,11 +13,11 @@ pub const Scope = enum {
 };
 
 pub var level: std.log.Level = switch (builtin.mode) {
-    .Debug => .debug,
+    .debug => .debug,
     else => .info,
 };
 
-pub var scopes: std.EnumSet(Scope) = std.EnumSet(Scope).initFull();
+pub var scopes: std.EnumSet(Scope) = .full;
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -30,7 +30,7 @@ fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (@intFromEnum(message_level) > @intFromEnum(level)) return;
+    if (@backingInt(message_level) > @backingInt(level)) return;
 
     if (std.meta.stringToEnum(Scope, @tagName(scope))) |s| {
         if (!scopes.contains(s)) return;
@@ -41,14 +41,14 @@ fn logFn(
 
 pub fn parseScopes(spec: []const u8) !void {
     const subtractive = spec.len > 0 and spec[0] == '~';
-    scopes = if (subtractive) .initFull() else .initEmpty();
+    scopes = if (subtractive) .full else .empty;
 
     var it = std.mem.splitScalar(u8, spec, ',');
     while (it.next()) |raw| {
         if (raw.len == 0) continue;
 
         if (std.mem.eql(u8, raw, "all")) {
-            scopes = std.EnumSet(Scope).initFull();
+            scopes = .full;
         } else if (raw[0] == '~') {
             scopes.remove(std.meta.stringToEnum(Scope, raw[1..]) orelse return error.UnknownScope);
         } else {

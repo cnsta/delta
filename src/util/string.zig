@@ -51,7 +51,7 @@ test "replace does not leak across many updates" {
 
     var buf: [32]u8 = undefined;
     for (0..100) |i| {
-        const title = try std.fmt.bufPrintZ(&buf, "page {d} - browser", .{i});
+        const title = try std.fmt.bufPrintSentinel(&buf, "page {d} - browser", .{i}, 0);
         try std.testing.expect(try replace(gpa, &owned, title.ptr));
     }
 }

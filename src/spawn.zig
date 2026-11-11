@@ -14,7 +14,7 @@ pub fn spawn(argv: []const []const u8) void {
 
     const child_argv = a.allocSentinel(?[*:0]const u8, argv.len, null) catch return oom(argv[0]);
     for (argv, 0..) |arg, i| {
-        const dup = a.dupeZ(u8, arg) catch return oom(argv[0]);
+        const dup = a.dupeSentinel(u8, arg, 0) catch return oom(argv[0]);
         child_argv[i] = dup.ptr;
     }
 
@@ -65,7 +65,7 @@ pub fn spawn(argv: []const []const u8) void {
 
 fn resolve(a: std.mem.Allocator, name: []const u8) ![]const [*:0]const u8 {
     if (std.mem.indexOfScalar(u8, name, '/') != null) {
-        const dup = try a.dupeZ(u8, name);
+        const dup = try a.dupeSentinel(u8, name, 0);
         const one = try a.alloc([*:0]const u8, 1);
         one[0] = dup.ptr;
         return one;
