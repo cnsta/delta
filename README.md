@@ -40,7 +40,7 @@ reading this).
 zig build
 ```
 
-Needs Zig 0.16, `wayland-client`, `libxkbcommon`, and the Linux input headers.
+Needs Zig 0.17.1, `wayland-client`, `libxkbcommon`, and the Linux input headers.
 
 Run it under river:
 

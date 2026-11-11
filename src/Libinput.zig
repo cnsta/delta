@@ -8,6 +8,7 @@ const fatal = std.process.fatal;
 const wm = &@import("Delta.zig").instance;
 const string = @import("util/string.zig");
 const Config = @import("Config.zig");
+const accel_curve = @import("util/accel_curve.zig");
 
 const log = std.log.scoped(.libinput);
 
@@ -18,6 +19,7 @@ link: wl.list.Link,
 
 input: ?*InputDevice = null,
 touchpad: bool = false,
+pointer: bool = false,
 
 pub const InputDevice = struct {
     obj: *river.InputDeviceV1,
@@ -99,7 +101,15 @@ fn listener(_: *river.LibinputDeviceV1, event: river.LibinputDeviceV1.Event, dev
         .tap_support => |args| if (args.finger_count > 0) {
             device.touchpad = true;
             log.info("touchpad {s}", .{device.name()});
-            device.apply(wm.config.input.touchpad);
+            device.applyTouchpad(wm.config.input.touchpad);
+        },
+
+        .accel_profiles_support => |args| {
+            const p = args.profiles;
+            if (device.touchpad or !(p.flat or p.adaptive or p.custom)) return;
+            device.pointer = true;
+            log.info("pointer {s}", .{device.name()});
+            device.applyPointer(wm.config.input.pointer);
         },
 
         .removed => device.destroy(),
@@ -111,7 +121,8 @@ fn listener(_: *river.LibinputDeviceV1, event: river.LibinputDeviceV1.Event, dev
 pub fn applyAll() void {
     var it = wm.libinput_devices.iterator(.forward);
     while (it.next()) |device| {
-        if (device.touchpad) device.apply(wm.config.input.touchpad);
+        if (device.touchpad) device.applyTouchpad(wm.config.input.touchpad);
+        if (device.pointer) device.applyPointer(wm.config.input.pointer);
     }
 }
 
@@ -120,7 +131,7 @@ fn name(device: *const Libinput) []const u8 {
     return input.name orelse "(unnamed)";
 }
 
-fn apply(device: *Libinput, t: Config.Touchpad) void {
+fn applyTouchpad(device: *Libinput, t: Config.Touchpad) void {
     const D = river.LibinputDeviceV1;
     const obj = device.obj;
 
@@ -182,31 +193,64 @@ fn apply(device: *Libinput, t: Config.Touchpad) void {
     }), &settings.accel_profile);
     if (t.accel_speed) |speed| {
         var value: [1]f64 = .{speed};
-        const bytes: []u8 = @ptrCast(&value);
-        var array: wl.Array = .{ .size = bytes.len, .alloc = bytes.len, .data = bytes.ptr };
+        var array = doubles(&value);
         watch(obj.setAccelSpeed(&array), &settings.accel_speed);
     }
+}
+
+fn applyPointer(device: *Libinput, p: Config.Pointer) void {
+    const D = river.LibinputDeviceV1;
+    const obj = device.obj;
+
+    if (p.accel_curve) |curve| {
+        const config = wm.libinput_config orelse return;
+        const accel = config.createAccelConfig(.custom) catch fatal("Out of memory.", .{});
+        defer accel.destroy();
+        var points = accel_curve.sample(curve);
+        var step: [1]f64 = .{points.step};
+        var step_array = doubles(&step);
+        var points_array = doubles(&points.values);
+        watch(accel.setPoints(.motion, &step_array, &points_array), &settings.pointer_accel_curve);
+        watch(obj.applyAccelConfig(accel), &settings.pointer_accel_curve);
+    } else if (p.accel_profile) |profile| watch(obj.setAccelProfile(switch (profile) {
+        .flat => D.AccelProfile.flat,
+        .adaptive => D.AccelProfile.adaptive,
+        .custom => unreachable, // Config requires accel_curve with it.
+    }), &settings.pointer_accel_profile);
+    if (p.accel_speed) |speed| {
+        var value: [1]f64 = .{speed};
+        var array = doubles(&value);
+        watch(obj.setAccelSpeed(&array), &settings.pointer_accel_speed);
+    }
+}
+
+fn doubles(values: []f64) wl.Array {
+    const bytes: []u8 = @ptrCast(values);
+    return .{ .size = bytes.len, .alloc = bytes.len, .data = bytes.ptr };
 }
 
 const Setting = struct { field: []const u8 };
 
 const settings = struct {
-    var tap: Setting = .{ .field = "tap" };
-    var tap_button_map: Setting = .{ .field = "tap_button_map" };
-    var drag: Setting = .{ .field = "drag" };
-    var drag_lock: Setting = .{ .field = "drag_lock" };
-    var three_finger_drag: Setting = .{ .field = "three_finger_drag" };
-    var natural_scroll: Setting = .{ .field = "natural_scroll" };
-    var scroll_method: Setting = .{ .field = "scroll_method" };
-    var click_method: Setting = .{ .field = "click_method" };
-    var clickfinger_button_map: Setting = .{ .field = "clickfinger_button_map" };
-    var dwt: Setting = .{ .field = "dwt" };
-    var dwtp: Setting = .{ .field = "dwtp" };
-    var middle_emulation: Setting = .{ .field = "middle_emulation" };
-    var left_handed: Setting = .{ .field = "left_handed" };
-    var send_events: Setting = .{ .field = "send_events" };
-    var accel_profile: Setting = .{ .field = "accel_profile" };
-    var accel_speed: Setting = .{ .field = "accel_speed" };
+    var tap: Setting = .{ .field = "touchpad.tap" };
+    var tap_button_map: Setting = .{ .field = "touchpad.tap_button_map" };
+    var drag: Setting = .{ .field = "touchpad.drag" };
+    var drag_lock: Setting = .{ .field = "touchpad.drag_lock" };
+    var three_finger_drag: Setting = .{ .field = "touchpad.three_finger_drag" };
+    var natural_scroll: Setting = .{ .field = "touchpad.natural_scroll" };
+    var scroll_method: Setting = .{ .field = "touchpad.scroll_method" };
+    var click_method: Setting = .{ .field = "touchpad.click_method" };
+    var clickfinger_button_map: Setting = .{ .field = "touchpad.clickfinger_button_map" };
+    var dwt: Setting = .{ .field = "touchpad.dwt" };
+    var dwtp: Setting = .{ .field = "touchpad.dwtp" };
+    var middle_emulation: Setting = .{ .field = "touchpad.middle_emulation" };
+    var left_handed: Setting = .{ .field = "touchpad.left_handed" };
+    var send_events: Setting = .{ .field = "touchpad.send_events" };
+    var accel_profile: Setting = .{ .field = "touchpad.accel_profile" };
+    var accel_speed: Setting = .{ .field = "touchpad.accel_speed" };
+    var pointer_accel_profile: Setting = .{ .field = "pointer.accel_profile" };
+    var pointer_accel_speed: Setting = .{ .field = "pointer.accel_speed" };
+    var pointer_accel_curve: Setting = .{ .field = "pointer.accel_curve" };
 };
 
 fn watch(result: anyerror!*river.LibinputResultV1, setting: *Setting) void {
@@ -217,8 +261,8 @@ fn watch(result: anyerror!*river.LibinputResultV1, setting: *Setting) void {
 fn resultListener(result: *river.LibinputResultV1, event: river.LibinputResultV1.Event, setting: *Setting) void {
     switch (event) {
         .success => {},
-        .unsupported => log.warn("touchpad: input.touchpad.{s} is not supported by the device", .{setting.field}),
-        .invalid => log.warn("touchpad: input.touchpad.{s} was rejected as invalid", .{setting.field}),
+        .unsupported => log.warn("input.{s} is not supported by the device", .{setting.field}),
+        .invalid => log.warn("input.{s} was rejected as invalid", .{setting.field}),
     }
     result.destroy();
 }

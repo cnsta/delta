@@ -165,7 +165,7 @@ fn readSignals(loop: *Loop) void {
         };
         if (n != bytes.len) return;
 
-        const sig: posix.SIG = @enumFromInt(info.signo);
+        const sig: posix.SIG = @fromBackingInt(@intCast(info.signo));
         switch (sig) {
             .INT, .TERM => wm.requestStop(),
             .HUP => wm.reload(),

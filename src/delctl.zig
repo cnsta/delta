@@ -549,8 +549,8 @@ fn write(fd: posix.fd_t, bytes: []const u8) !void {
 
         if (syscall.failed(rc)) {
             return switch (syscall.errno(rc)) {
-                @intFromEnum(linux.E.INTR) => continue,
-                @intFromEnum(linux.E.PIPE) => std.process.exit(0),
+                @backingInt(linux.E.INTR) => continue,
+                @backingInt(linux.E.PIPE) => std.process.exit(0),
                 else => error.WriteFailed,
             };
         }

@@ -38,9 +38,24 @@
         //     .click_method = .clickfinger,
         //     .accel_speed = 0.2, // -1 to 1
         // },
+        // Every other pointer (mice, trackballs, trackpoints).
+        // .accel_profile: .flat/.adaptive/.custom. .custom takes a maccel
+        // curve (github.com/Gnarus-G/maccel) in .accel_curve, same parameter
+        // names and defaults: .mode = .linear (.accel, .offset, .output_cap),
+        // .natural (.decay_rate, .offset, .limit) or .synchronous (.gamma,
+        // .smooth, .motivity, .sync_speed); plus .sens_mult, .input_dpi
+        // (leave at 1000 if hwdb sets MOUSE_DPI) and .max_speed (counts/ms
+        // covered, default 64). No yx_ratio or angle_rotation.
+        // .pointer = .{
+        //     .accel_profile = .custom,
+        //     .accel_curve = .{ .mode = .linear, .accel = 0.3, .offset = 2, .output_cap = 2 },
+        // },
     },
 
     .layout = .{
+        // A tile splits side by side when width > height * split_bias, else
+        // stacked. Re-derived on every open/close/output change, except
+        // splits set by toggle_split or an edge drop.
         .split_bias = 1.0,
         .resize_step = 32,
     },

@@ -6,19 +6,17 @@
 }:
 linkFarm "zig-packages" [
   {
-    name = "wayland-0.7.0-dev-lQa1krn7AQCMUzT3J6gWyukl3L3kbMtCZy9djQemUYA-";
-    path = fetchgit {
-      url = "https://github.com/ifreund/zig-wayland";
-      rev = "589aaf7c213159547d774ef8e6491f0045c511d5";
-      hash = "sha256-C1KR8BhbzbO+9RC1ExIDmbKARnzK2XA3+0pzxL4K2Qw=";
+    name = "wayland-0.7.0-lQa1kuP8AQD5dW7_o-VKLVD_QbqXe7Zob78r2su7Pyex";
+    path = fetchzip {
+      url = "https://codeberg.org/ifreund/zig-wayland/archive/v0.7.0.tar.gz";
+      hash = "sha256-9rsYFmaWySpCWuNLYuSmgrMFT+QXbdJAY2uEKW48+I8=";
     };
   }
   {
-    name = "xkbcommon-0.5.0-dev-VDqIe0y2AgA1RzA2ICMdGhaAgSXdhtRTbYybQQu7WfOa";
-    path = fetchgit {
-      url = "https://codeberg.org/ifreund/zig-xkbcommon.git";
-      rev = "6c2f41e269adde0d2cd58d20c02c4f8803d83eb1";
-      hash = "sha256-vreObBYsAsb33qKdTpQGFqPbweidMw+L1MRWxqwq07E=";
+    name = "xkbcommon-0.5.0-VDqIe8y3AgDU-cGL02xZplwABH3WbpTimrrgbgTgD_3g";
+    path = fetchzip {
+      url = "https://codeberg.org/ifreund/zig-xkbcommon/archive/v0.5.0.tar.gz";
+      hash = "sha256-/q5qMF7fQboP4pWYurK/A7JSzl43Z6Cw1ReAGZQlt+c=";
     };
   }
 ]

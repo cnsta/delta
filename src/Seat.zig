@@ -487,7 +487,6 @@ pub fn moveDirection(seat: *Seat, dir: geom.Direction) void {
     const ws = window.workspace orelse return;
 
     const target = ws.windowInDirection(window, dir) orelse return;
-    // floats have no place in the tree to trade.
     if (target.float) return;
 
     ws.layout.swap(window, target);
@@ -756,7 +755,7 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
     const dirs = [4]geom.Direction{ .left, .right, .up, .down };
 
     inline for (arrows, letters, dirs) |arrow, letter, dir| {
-        const key: xkb.Keysym = @enumFromInt(arrow);
+        const key: xkb.Keysym = @fromBackingInt(@intCast(arrow));
 
         XkbBinding.create(seat, super, key, .{ .focus_direction = dir });
         XkbBinding.create(seat, super, letter, .{ .focus_direction = dir });
@@ -768,12 +767,12 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
     XkbBinding.create(seat, super, .v, .toggle_split);
     XkbBinding.create(seat, super, .Tab, .show_desktop);
 
-    const question: xkb.Keysym = @enumFromInt(0x03f);
-    const minus: xkb.Keysym = @enumFromInt(0x02d);
-    const plus: xkb.Keysym = @enumFromInt(0x02b);
-    const underscore: xkb.Keysym = @enumFromInt(0x05f);
-    const kp_add: xkb.Keysym = @enumFromInt(0xffab);
-    const kp_subtract: xkb.Keysym = @enumFromInt(0xffad);
+    const question: xkb.Keysym = @fromBackingInt(@intCast(0x03f));
+    const minus: xkb.Keysym = @fromBackingInt(@intCast(0x02d));
+    const plus: xkb.Keysym = @fromBackingInt(@intCast(0x02b));
+    const underscore: xkb.Keysym = @fromBackingInt(@intCast(0x05f));
+    const kp_add: xkb.Keysym = @fromBackingInt(@intCast(0xffab));
+    const kp_subtract: xkb.Keysym = @fromBackingInt(@intCast(0xffad));
 
     XkbBinding.create(seat, super, question, .{ .resize = .grow_width });
     XkbBinding.create(seat, super, plus, .{ .resize = .grow_width });
@@ -794,7 +793,7 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
     XkbBinding.create(seat, super, .Escape, .exit);
 
     inline for (1..10) |n| {
-        const keysym: xkb.Keysym = @enumFromInt('0' + n);
+        const keysym: xkb.Keysym = @fromBackingInt(@intCast('0' + n));
         XkbBinding.create(seat, super, keysym, .{ .focus_workspace = n });
         XkbBinding.create(seat, super_shift, keysym, .{ .send_to_workspace = n });
     }
@@ -847,7 +846,6 @@ fn listener(_: *river.SeatV1, event: river.SeatV1.Event, seat: *Seat) void {
         },
         .wl_seat => {},
         .shell_surface_interaction => {},
-        // TODO: touch ops (v6).
         .op_delta_touch, .op_release_touch, .op_cancel_touch => {},
     }
 }
