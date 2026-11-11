@@ -231,7 +231,7 @@ fn map_state(state: &State) -> CompositorState {
             id: i as i128,
             name: o.name.clone(),
             active_workspace_id: o.workspace.map_or(-1, |id| id as i32),
-            special_workspace_id: -1,
+            special_workspace_name: -1,
         })
         .collect();
 
