@@ -5,6 +5,7 @@ const zon = std.zon;
 const xkb = @import("xkbcommon");
 const glob = @import("util/glob.zig");
 const anim = @import("util/animation.zig");
+const accel_curve = @import("util/accel_curve.zig");
 const Io = std.Io;
 const Action = @import("input/action.zig").Action;
 
@@ -46,6 +47,7 @@ pub const Input = struct {
     drag_threshold: i32 = 10,
 
     touchpad: Touchpad = .{},
+    pointer: Pointer = .{},
 };
 
 pub const Touchpad = struct {
@@ -78,6 +80,14 @@ pub const Touchpad = struct {
     pub const AccelProfile = enum { flat, adaptive };
 };
 
+pub const Pointer = struct {
+    accel_profile: ?AccelProfile = null,
+    accel_speed: ?f64 = null,
+    accel_curve: ?accel_curve.Curve = null,
+
+    pub const AccelProfile = enum { flat, adaptive, custom };
+};
+
 pub const Cursor = struct {
     warp: Warp = .focus,
 
@@ -86,10 +96,7 @@ pub const Cursor = struct {
 
     pub const Warp = enum {
         none,
-        /// warp to the window keyboard focus moves to (directional focus
-        /// and move, the fallback focus after sending a window away).
         focus,
-        /// as `focus`, and also warp to new windows.
         spawn,
     };
 };
@@ -231,16 +238,18 @@ pub fn parse(gpa: Allocator, source: [:0]const u8, report: *?[]const u8) error{O
     var arena = std.heap.ArenaAllocator.init(gpa);
     errdefer arena.deinit();
 
-    var diag: zon.parse.Diagnostics = .{};
+    var diag: zon.parse.Diagnostics = undefined;
 
-    const config = zon.parse.fromSliceAlloc(Config, arena.allocator(), source, &diag, .{
+    const config = zon.parse.fromSlice(Config, .{
+        .gpa = gpa,
+        .arena = arena.allocator(),
+        .source = source,
+        .diagnostics = &diag,
         .ignore_unknown_fields = false,
-
-        .free_on_error = false,
     }) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.ParseZon => {
-            report.* = try std.fmt.allocPrint(gpa, "{f}", .{diag});
+            report.* = try std.fmt.allocPrint(gpa, "{f}", .{diag.fmt("config")});
             arena.deinit();
             return null;
         },
@@ -281,6 +290,28 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
                 "input.touchpad.accel_speed must be between -1 and 1, found {d}",
                 .{speed},
             );
+            return true;
+        }
+    }
+
+    const pointer = config.input.pointer;
+    if (pointer.accel_speed) |speed| {
+        if (!(speed >= -1 and speed <= 1)) {
+            report.* = try std.fmt.allocPrint(
+                gpa,
+                "input.pointer.accel_speed must be between -1 and 1, found {d}",
+                .{speed},
+            );
+            return true;
+        }
+    }
+    if ((pointer.accel_profile == .custom) != (pointer.accel_curve != null)) {
+        report.* = try gpa.dupe(u8, "input.pointer.accel_curve needs .accel_profile = .custom, and vice versa");
+        return true;
+    }
+    if (pointer.accel_curve) |curve| {
+        if (accel_curve.check(curve)) |reason| {
+            report.* = try std.fmt.allocPrint(gpa, "input.pointer.accel_curve: {s}", .{reason});
             return true;
         }
     }
@@ -474,6 +505,34 @@ test "touchpad accel_speed is range checked" {
 
     try std.testing.expect(try parse(gpa, ".{ .input = .{ .touchpad = .{ .accel_speed = 1.5 } } }", &report) == null);
     try std.testing.expect(std.mem.indexOf(u8, report.?, "accel_speed") != null);
+}
+
+test "pointer accel_curve parses and pairs with the custom profile" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{ .input = .{ .pointer = .{
+        \\    .accel_profile = .custom,
+        \\    .accel_curve = .{ .mode = .natural, .decay_rate = 0.2, .limit = 2 },
+        \\} } }
+    , &report)).?;
+    defer loaded.deinit();
+    const curve = loaded.config.input.pointer.accel_curve.?;
+    try std.testing.expectEqual(accel_curve.Mode.natural, curve.mode);
+    try std.testing.expectEqual(@as(f64, 2), curve.limit);
+    try std.testing.expectEqual(@as(f64, 5), curve.sync_speed);
+
+    try std.testing.expect(try parse(gpa, ".{ .input = .{ .pointer = .{ .accel_profile = .custom } } }", &report) == null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "accel_curve") != null);
+    gpa.free(report.?);
+    report = null;
+
+    try std.testing.expect(try parse(gpa,
+        \\.{ .input = .{ .pointer = .{ .accel_profile = .custom, .accel_curve = .{ .max_speed = -1 } } } }
+    , &report) == null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "max_speed") != null);
 }
 
 test "strings are owned by the arena" {
