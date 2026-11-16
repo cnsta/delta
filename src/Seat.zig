@@ -131,6 +131,7 @@ pub fn forgetWindow(seat: *Seat, window: *Window) void {
     if (seat.focused == window) {
         window.focus_count -= 1;
         seat.focused = null;
+        seat.obj.clearFocus();
     }
     if (seat.hovered == window) seat.hovered = null;
     if (seat.interacted == window) seat.interacted = null;
