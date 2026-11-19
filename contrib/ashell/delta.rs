@@ -244,6 +244,12 @@ fn map_state(state: &State) -> CompositorState {
         .map(|ws| ws.id as i32)
         .collect();
 
+    let focused_workspace_id = state
+        .workspaces
+        .iter()
+        .find(|ws| ws.focused)
+        .map(|ws| ws.id as i32);
+
     let active_window = state.windows.iter().find(|w| w.focused).map(|w| {
         ActiveWindow::Generic(ActiveWindowGeneric {
             title: w.title.clone().unwrap_or_default(),
@@ -255,7 +261,9 @@ fn map_state(state: &State) -> CompositorState {
         workspaces,
         monitors,
         active_workspace_ids,
+        focused_workspace_id,
         active_window,
+        windows: Vec::new(),
         keyboard_layout: String::new(),
         submap: None,
     }
