@@ -13,6 +13,7 @@ const Delta = @import("Delta.zig");
 const Loop = @import("Loop.zig");
 const OutputHead = @import("OutputHead.zig");
 const Libinput = @import("Libinput.zig");
+const Keyboard = @import("Keyboard.zig");
 
 pub const std_options = @import("log.zig").std_options;
 
@@ -23,6 +24,7 @@ const layer_shell_version = 1;
 const output_manager_version_max = 4;
 const input_manager_version_max = 2;
 const libinput_config_version_max = 2;
+const xkb_config_version_max = 3;
 
 const Globals = struct {
     window_manager: ?*river.WindowManagerV1 = null,
@@ -34,6 +36,7 @@ const Globals = struct {
     output_manager: ?struct { name: u32, version: u32 } = null,
     input_manager: ?struct { name: u32, version: u32 } = null,
     libinput_config: ?struct { name: u32, version: u32 } = null,
+    xkb_config: ?struct { name: u32, version: u32 } = null,
 };
 
 const child_environment = [_][2][]const u8{
@@ -50,6 +53,7 @@ test {
     _ = @import("Output.zig");
     _ = OutputHead;
     _ = Libinput;
+    _ = Keyboard;
     _ = @import("Seat.zig");
     _ = @import("Window.zig");
     _ = @import("Workspace.zig");
@@ -160,6 +164,13 @@ pub fn main(init: std.process.Init) !void {
         Delta.instance.libinput_config = config;
     } else {
         std.log.info("river_libinput_config_v1 unavailable; .input.touchpad and .pointer are ignored", .{});
+    }
+    if (globals.xkb_config) |global| {
+        const config = try registry.bind(global.name, river.XkbConfigV1, global.version);
+        config.setListener(?*anyopaque, Keyboard.configListener, null);
+        Delta.instance.keyboard.config = config;
+    } else {
+        std.log.info("river_xkb_config_v1 unavailable; .input.keyboard is ignored", .{});
     }
 
     if (globals.layer_shell == null) {
@@ -272,6 +283,12 @@ fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, globals: *
                     ev.version, version,
                 });
                 globals.libinput_config = .{ .name = ev.name, .version = version };
+            } else if (std.mem.orderZ(u8, river.XkbConfigV1.interface.name, ev.interface) == .eq) {
+                const version = @min(ev.version, xkb_config_version_max);
+                std.log.info("river_xkb_config_v1 advertised v{d}, binding v{d}", .{
+                    ev.version, version,
+                });
+                globals.xkb_config = .{ .name = ev.name, .version = version };
             } else if (std.mem.orderZ(u8, wl.Compositor.interface.name, ev.interface) == .eq) {
                 globals.compositor = registry.bind(ev.name, wl.Compositor, 4) catch
                     fatal("Out of memory.", .{});

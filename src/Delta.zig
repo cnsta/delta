@@ -17,6 +17,7 @@ const protocol = @import("ipc/protocol.zig");
 const Output = @import("Output.zig");
 const OutputHead = @import("OutputHead.zig");
 const Libinput = @import("Libinput.zig");
+const Keyboard = @import("Keyboard.zig");
 const Seat = @import("Seat.zig");
 const Window = @import("Window.zig");
 const Workspace = @import("Workspace.zig");
@@ -48,6 +49,7 @@ outputs: wl.list.Head(Output, .link),
 heads: wl.list.Head(OutputHead, .link),
 libinput_devices: wl.list.Head(Libinput, .link),
 input_devices: wl.list.Head(Libinput.InputDevice, .link),
+keyboard: Keyboard.State = .{},
 windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 active_seat: ?*Seat = null,
@@ -143,6 +145,7 @@ pub fn init(
     instance.heads.init();
     instance.libinput_devices.init();
     instance.input_devices.init();
+    instance.keyboard.init();
     instance.windows.init();
     instance.seats.init();
     instance.workspaces.init();
@@ -339,6 +342,7 @@ pub fn reload(delta: *Delta) void {
         }
         delta.exportCursorEnv();
         Libinput.applyAll();
+        Keyboard.applyAll();
 
         delta.dirty = true;
 
@@ -377,6 +381,7 @@ pub fn deinit(delta: *Delta) void {
         ws.maybeDestroy();
     }
     while (delta.heads.first()) |head| head.destroy();
+    delta.keyboard.deinit();
     while (delta.libinput_devices.first()) |device| device.destroy();
     while (delta.input_devices.first()) |device| device.destroy();
 

@@ -39,6 +39,8 @@ pub const Input = struct {
     repeat_delay: u32 = 400,
     repeat_rate: u32 = 40,
 
+    keyboard: Keyboard = .{},
+
     focus_follows_pointer: bool = true,
     focus_new_windows: bool = true,
     follow_sent_windows: bool = false,
@@ -78,6 +80,86 @@ pub const Touchpad = struct {
     pub const ClickMethod = enum { none, button_areas, clickfinger };
     pub const SendEvents = enum { enabled, disabled, disabled_on_external_mouse };
     pub const AccelProfile = enum { flat, adaptive };
+};
+
+pub const Keyboard = struct {
+    rules: ?[:0]const u8 = null,
+    model: ?[:0]const u8 = null,
+    layout: ?[:0]const u8 = null,
+    variant: ?[:0]const u8 = null,
+    options: ?[:0]const u8 = null,
+
+    devices: []const Device = &.{},
+
+    pub const Device = struct {
+        name: []const u8,
+
+        rules: ?[:0]const u8 = null,
+        model: ?[:0]const u8 = null,
+        layout: ?[:0]const u8 = null,
+        variant: ?[:0]const u8 = null,
+        options: ?[:0]const u8 = null,
+    };
+
+    pub const Names = struct {
+        rules: ?[:0]const u8 = null,
+        model: ?[:0]const u8 = null,
+        layout: ?[:0]const u8 = null,
+        variant: ?[:0]const u8 = null,
+        options: ?[:0]const u8 = null,
+
+        fn of(x: anytype) Names {
+            return .{
+                .rules = x.rules,
+                .model = x.model,
+                .layout = x.layout,
+                .variant = x.variant,
+                .options = x.options,
+            };
+        }
+
+        pub fn compile(names: Names, context: *xkb.Context) ?*xkb.Keymap {
+            const rmlvo: xkb.RuleNames = .{
+                .rules = if (names.rules) |s| s.ptr else null,
+                .model = if (names.model) |s| s.ptr else null,
+                .layout = if (names.layout) |s| s.ptr else null,
+                .variant = if (names.variant) |s| s.ptr else null,
+                .options = if (names.options) |s| s.ptr else null,
+            };
+            return xkb.Keymap.newFromNames(context, &rmlvo, .no_flags);
+        }
+
+        pub fn format(names: Names, w: *Io.Writer) Io.Writer.Error!void {
+            var any = false;
+            inline for (.{ "rules", "model", "layout", "variant", "options" }) |field| {
+                if (@field(names, field)) |value| {
+                    try w.print("{s}{s} \"{s}\"", .{ if (any) ", " else "", field, value });
+                    any = true;
+                }
+            }
+            if (!any) try w.writeAll("defaults");
+        }
+    };
+
+    pub const Source = ?usize;
+
+    pub fn configured(kb: Keyboard) bool {
+        const top = Names.of(kb);
+        return kb.devices.len > 0 or top.rules != null or top.model != null or
+            top.layout != null or top.variant != null or top.options != null;
+    }
+
+    pub fn pick(kb: Keyboard, device_name: ?[]const u8) Source {
+        const name = device_name orelse return null;
+        for (kb.devices, 0..) |device, i| {
+            if (glob.match(device.name, name)) return i;
+        }
+        return null;
+    }
+
+    pub fn namesFor(kb: Keyboard, source: Source) Names {
+        return if (source) |i| .of(kb.devices[i]) else .of(kb);
+    }
 };
 
 pub const Pointer = struct {
@@ -316,6 +398,21 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
         }
     }
 
+    if (config.input.repeat_rate > 1000) {
+        report.* = try std.fmt.allocPrint(
+            gpa,
+            "input.repeat_rate is repeats per second and must be at most 1000, found {d}",
+            .{config.input.repeat_rate},
+        );
+        return true;
+    }
+    if (config.input.repeat_delay > std.math.maxInt(i32)) {
+        report.* = try std.fmt.allocPrint(gpa, "input.repeat_delay is too large: {d}", .{config.input.repeat_delay});
+        return true;
+    }
+
+    if (try validateKeyboard(gpa, config.input.keyboard, report)) return true;
+
     if (config.gaps.between < 0 or config.gaps.edge < 0 or config.border.width < 0) {
         report.* = try std.fmt.allocPrint(gpa, "gaps and border width must not be negative", .{});
         return true;
@@ -362,6 +459,35 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
                 return true;
             }
         }
+    }
+    return false;
+}
+
+fn validateKeyboard(gpa: Allocator, kb: Keyboard, report: *?[]const u8) error{OutOfMemory}!bool {
+    if (!kb.configured()) return false;
+
+    const context = xkb.Context.new(.no_flags) orelse {
+        report.* = try gpa.dupe(u8, "input.keyboard: cannot create an xkb context");
+        return true;
+    };
+    defer context.unref();
+
+    var source: Keyboard.Source = null;
+    while (true) {
+        const names = kb.namesFor(source);
+        if (names.compile(context)) |keymap| {
+            keymap.unref();
+        } else {
+            report.* = if (source) |i|
+                try std.fmt.allocPrint(gpa, "input.keyboard.devices[{d}]: cannot compile an xkb keymap from {f}", .{ i, names })
+            else
+                try std.fmt.allocPrint(gpa, "input.keyboard: cannot compile an xkb keymap from {f}", .{names});
+            return true;
+        }
+
+        const next = if (source) |i| i + 1 else 0;
+        if (next >= kb.devices.len) break;
+        source = next;
     }
     return false;
 }
@@ -533,6 +659,73 @@ test "pointer accel_curve parses and pairs with the custom profile" {
         \\.{ .input = .{ .pointer = .{ .accel_profile = .custom, .accel_curve = .{ .max_speed = -1 } } } }
     , &report) == null);
     try std.testing.expect(std.mem.indexOf(u8, report.?, "max_speed") != null);
+}
+
+test "keyboard names parse, and the first matching device wins" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    var loaded = (try parse(gpa,
+        \\.{ .input = .{ .keyboard = .{
+        \\    .layout = "us",
+        \\    .options = "ctrl:swapcaps",
+        \\    .devices = .{
+        \\        .{ .name = "*Ducky*", .layout = "se", .variant = "nodeadkeys" },
+        \\        .{ .name = "*", .options = "caps:escape" },
+        \\    },
+        \\} } }
+    , &report) orelse {
+        std.debug.print("{s}\n", .{report.?});
+        return error.TestUnexpectedResult;
+    });
+    defer loaded.deinit();
+
+    const kb = loaded.config.input.keyboard;
+    try std.testing.expect(kb.configured());
+    try std.testing.expectEqual(@as(Keyboard.Source, 0), kb.pick("Ducky One 3"));
+    try std.testing.expectEqual(@as(Keyboard.Source, 1), kb.pick("AT Translated Set 2"));
+    try std.testing.expectEqual(@as(Keyboard.Source, null), kb.pick(null));
+
+    const top = kb.namesFor(null);
+    try std.testing.expectEqualStrings("us", top.layout.?);
+    try std.testing.expectEqualStrings("ctrl:swapcaps", top.options.?);
+
+    // A device entry replaces the top-level names, nothing is merged.
+    const ducky = kb.namesFor(0);
+    try std.testing.expectEqualStrings("se", ducky.layout.?);
+    try std.testing.expect(ducky.options == null);
+
+    var buf: [128]u8 = undefined;
+    const shown = try std.fmt.bufPrint(&buf, "{f}", .{ducky});
+    try std.testing.expectEqualStrings("layout \"se\", variant \"nodeadkeys\"", shown);
+    try std.testing.expectEqualStrings("defaults", try std.fmt.bufPrint(&buf, "{f}", .{Keyboard.Names{}}));
+}
+
+test "an empty keyboard section leaves keymaps alone" {
+    const kb: Keyboard = .{};
+    try std.testing.expect(!kb.configured());
+}
+
+test "a keymap that cannot compile is a config error" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    try std.testing.expect(try parse(gpa,
+        \\.{ .input = .{ .keyboard = .{ .devices = .{ .{ .name = "x", .layout = "no-such-layout" } } } } }
+    , &report) == null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "input.keyboard.devices[0]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "no-such-layout") != null);
+}
+
+test "repeat_rate is repeats per second" {
+    const gpa = std.testing.allocator;
+    var report: ?[]const u8 = null;
+    defer if (report) |r| gpa.free(r);
+
+    try std.testing.expect(try parse(gpa, ".{ .input = .{ .repeat_rate = 1001 } }", &report) == null);
+    try std.testing.expect(std.mem.indexOf(u8, report.?, "repeat_rate") != null);
 }
 
 test "strings are owned by the arena" {

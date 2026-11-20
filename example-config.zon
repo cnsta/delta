@@ -12,8 +12,27 @@
     },
 
     .input = .{
+        // Key repeat for every keyboard and for repeating bindings: delay in
+        // ms, rate in repeats per second (0 = no repeat).
         .repeat_delay = 400,
         .repeat_rate = 40,
+        // xkb keymap (.rules, .model, .layout, .variant, .options), applied
+        // live on reload. Unset fields use libxkbcommon's defaults, including
+        // XKB_DEFAULT_* from River's environment; set .variant along with
+        // .layout, or the default variant is dropped. Leave the whole section
+        // out and delta never touches the keymap. Unknown .options are
+        // ignored silently by xkb, not reported. The first .devices entry
+        // whose .name glob matches a keyboard's name (delta logs
+        // `keyboard <name>` at startup) replaces the top-level names for it;
+        // no match = top level.
+        // .keyboard = .{
+        //     .layout = "se",
+        //     .variant = "nodeadkeys",
+        //     .options = "ctrl:swapcaps",
+        //     .devices = .{
+        //         .{ .name = "*Ducky*", .layout = "us", .options = "ctrl:swapcaps" },
+        //     },
+        // },
         .focus_follows_pointer = true,
         .focus_new_windows = true,
         // .none, .focus (keyboard focus moves) or .spawn (also new windows

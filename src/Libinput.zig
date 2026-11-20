@@ -9,6 +9,7 @@ const wm = &@import("Delta.zig").instance;
 const string = @import("util/string.zig");
 const Config = @import("Config.zig");
 const accel_curve = @import("util/accel_curve.zig");
+const Keyboard = @import("Keyboard.zig");
 
 const log = std.log.scoped(.libinput);
 
@@ -25,12 +26,14 @@ pub const InputDevice = struct {
     obj: *river.InputDeviceV1,
     link: wl.list.Link,
     name: ?[]const u8 = null,
+    kind: ?river.InputDeviceV1.Type = null,
 
     pub fn destroy(device: *InputDevice) void {
         var it = wm.libinput_devices.iterator(.forward);
         while (it.next()) |d| {
             if (d.input == device) d.input = null;
         }
+        Keyboard.forgetDevice(device);
 
         string.free(wm.gpa, &device.name);
         if (!wm.shutting_down) device.obj.destroy();
@@ -61,8 +64,12 @@ pub fn inputManagerListener(
 fn inputDeviceListener(_: *river.InputDeviceV1, event: river.InputDeviceV1.Event, device: *InputDevice) void {
     switch (event) {
         .name => |args| _ = string.replace(wm.gpa, &device.name, args.name) catch fatal("Out of memory.", .{}),
+        .type => |args| {
+            device.kind = args.type;
+            Keyboard.applyRepeat(device);
+        },
         .removed => device.destroy(),
-        .type, .done => {},
+        .done => {},
     }
 }
 

@@ -384,7 +384,12 @@ pub fn tick(seat: *Seat, now: i64) void {
 
     _ = seat.pending.push(binding.action);
 
-    seat.repeat_at = now + wm.config.input.repeat_rate;
+    const rate = wm.config.input.repeat_rate;
+    if (rate == 0) {
+        seat.repeat_binding = null;
+        return;
+    }
+    seat.repeat_at = now + @max(1, 1000 / rate);
     wm.dirty = true;
 }
 
@@ -647,7 +652,7 @@ fn grabbedCorner(seat: *const Seat, window: *const Window) rules.Edges {
 // -- key repeat --------------------------------------------------------
 
 pub fn beginRepeat(seat: *Seat, binding: *XkbBinding) void {
-    if (!binding.action.repeats()) return;
+    if (!binding.action.repeats() or wm.config.input.repeat_rate == 0) return;
 
     seat.repeat_binding = binding;
     seat.repeat_at = wm.millis() + wm.config.input.repeat_delay;
