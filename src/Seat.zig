@@ -536,6 +536,7 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     if (window.workspace == target) return;
 
     window.setWorkspace(target);
+    window.manual.workspace = true;
 
     if (wm.config.input.follow_sent_windows) {
         seat.dropFocus();
@@ -557,6 +558,7 @@ pub fn closeFocused(seat: *Seat) void {
 pub fn toggleFullscreen(seat: *Seat) void {
     const window = seat.focused orelse return;
     window.toggleFullscreen();
+    window.manual.fullscreen = true;
 }
 
 pub fn toggleFloat(seat: *Seat) void {
@@ -565,6 +567,7 @@ pub fn toggleFloat(seat: *Seat) void {
     if (window.fullscreen != null) return;
 
     window.toggleFloat();
+    window.manual.float = true;
 }
 
 pub fn resizeStep(seat: *Seat, how: Action.Resize) void {
