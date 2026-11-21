@@ -23,9 +23,8 @@ warping, layer shell (bars, launchers, lock screens), window rules, live config
 reload, an IPC with a CLI (`delctl`, which can also trigger any keybinding
 action), multi-seat, basic animations.
 
-**Missing:** rules that re-evaluate when a window renames itself. Multi-seat is
-untested with more than one real seat, touchpad settings are untested entirely.
-General hardening, optimization, and time.
+**Missing:** Multi-seat is untested with more than one real seat, touchpad
+settings are untested entirely. General hardening, optimization, and time.
 
 **Notes:** I have only tested this on NixOS and I have no immediate plans to
 change this fact. The flake's `lib.withDelta` adds a delta backend to
@@ -120,6 +119,12 @@ Pointer, touchpad and cursor settings also live under `.input`; see
 
 A window counts as a `.dialog` if it has a parent or a fixed size. Dialogs float
 by default, and floating windows always stack above tiled ones.
+
+Rules are evaluated again whenever a window changes its app_id or title.
+`.float`, `.fullscreen` and `.workspace` follow when their outcome changes, but
+not once you have changed that property yourself. A rule that stops matching
+undoes nothing. `.focused` and `.warp` apply only when the window maps, and a
+rule moving the focused window elsewhere leaves focus where it was.
 
 ZON rather than a bespoke format: no parser to write, no dependency to add, type
 and field errors for free, and it generates cleanly from Nix.
