@@ -30,7 +30,8 @@ General hardening, optimization, and time.
 **Notes:** I have only tested this on NixOS and I have no immediate plans to
 change this fact. The flake's `lib.withDelta` adds a delta backend to
 [ashell](https://github.com/MalpenZibo/ashell), which enables its workspace
-widget. The module also packages levee, a small session locker.
+widget. The module also packages [levee](https://github.com/cnsta/levee), a
+small session locker.
 
 **Disclaimer:** What you read below might not be completely up to date.
 
