@@ -2,7 +2,7 @@ const std = @import("std");
 
 const log = @import("log.zig");
 
-pub const version = "0.1.1";
+pub const version = @import("build_options").version;
 
 pub const usage =
     \\usage: delta-wm [options]
