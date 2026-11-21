@@ -251,6 +251,22 @@ pub const Resolved = struct {
     workspace: ?u32 = null,
     focused: ?bool = null,
     warp: ?bool = null,
+
+    pub fn changed(prev: Resolved, next: Resolved) Resolved {
+        return .{
+            .float = newOpinion(bool, prev.float, next.float),
+            .fullscreen = newOpinion(bool, prev.fullscreen, next.fullscreen),
+            .workspace = newOpinion(u32, prev.workspace, next.workspace),
+        };
+    }
+
+    fn newOpinion(comptime T: type, prev: ?T, next: ?T) ?T {
+        const value = next orelse return null;
+        if (prev) |p| {
+            if (p == value) return null;
+        }
+        return value;
+    }
 };
 
 pub fn resolve(config: *const Config, candidate: Candidate) Resolved {
@@ -979,6 +995,29 @@ test "later rules win, and excludes beat matches" {
         @as(?bool, null),
         config.resolve(.{ .app_id = "zen", .title = "Zen", .dialog = false }).focused,
     );
+}
+
+test "a rename applies only outcomes that changed to a new opinion" {
+    const none: Resolved = .{};
+
+    // Late app id: the workspace rule starts matching.
+    const late = Resolved.changed(none, .{ .workspace = 4 });
+    try std.testing.expectEqual(@as(?u32, 4), late.workspace);
+    try std.testing.expectEqual(@as(?bool, null), late.float);
+
+    // Same outcome again (a title change within the same match): nothing.
+    try std.testing.expectEqual(none, Resolved.changed(.{ .workspace = 4 }, .{ .workspace = 4 }));
+
+    // The rule stops matching: nothing is undone.
+    try std.testing.expectEqual(none, Resolved.changed(.{ .workspace = 4, .float = true }, none));
+
+    // A different opinion is applied, false included.
+    const flip = Resolved.changed(.{ .float = true, .workspace = 4 }, .{ .float = false, .workspace = 2 });
+    try std.testing.expectEqual(@as(?bool, false), flip.float);
+    try std.testing.expectEqual(@as(?u32, 2), flip.workspace);
+
+    // Focus and warp only ever apply at map.
+    try std.testing.expectEqual(none, Resolved.changed(none, .{ .focused = true, .warp = true }));
 }
 
 test "a window with no app id does not match a pattern for one" {
