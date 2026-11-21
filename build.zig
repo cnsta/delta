@@ -4,6 +4,9 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const options = b.addOptions();
+    options.addOption([]const u8, "version", @import("build.zig.zon").version);
+
     const scanner = @import("wayland").Scanner.create(b, .{});
     scanner.addSystemProtocol("stable/viewporter/viewporter.xml");
     scanner.addSystemProtocol("staging/single-pixel-buffer/single-pixel-buffer-v1.xml");
@@ -51,6 +54,7 @@ pub fn build(b: *std.Build) void {
                 .{ .name = "wayland", .module = wayland },
                 .{ .name = "xkbcommon", .module = xkbcommon },
                 .{ .name = "event-codes", .module = input_event_codes.createModule() },
+                .{ .name = "build_options", .module = options.createModule() },
             },
         }),
     });
