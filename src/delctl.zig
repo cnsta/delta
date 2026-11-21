@@ -7,8 +7,6 @@ const protocol = @import("ipc/protocol.zig");
 const Action = @import("input/action.zig").Action;
 const syscall = @import("util/syscall.zig");
 
-const version = @import("cli.zig").version;
-
 const usage =
     \\usage: delctl [--json] <command>
     \\
