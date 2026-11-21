@@ -67,6 +67,10 @@ float: bool = false,
 float_box: geom.Rect = geom.Rect.zero,
 resize_anchor: rules.Edges = .{},
 
+ruled: Config.Resolved = .{},
+rules_stale: bool = false,
+manual: Manual = .{},
+
 identifier_buf: [32]u8 = undefined,
 identifier_len: u8 = 0,
 app_id: ?[]const u8 = null,
@@ -85,6 +89,12 @@ fullscreen: ?*Output = null,
 fullscreen_applied: ?*Output = null,
 fullscreen_request: FullscreenRequest = .none,
 pointer_request: PointerRequest = .none,
+
+pub const Manual = struct {
+    float: bool = false,
+    workspace: bool = false,
+    fullscreen: bool = false,
+};
 
 pub const FullscreenRequest = union(enum) {
     none,
@@ -686,11 +696,9 @@ pub fn manage(window: *Window) void {
 
         window.obj.setCapabilities(capabilities);
 
-        const applied = wm.config.resolve(.{
-            .app_id = window.app_id,
-            .title = window.title,
-            .dialog = window.isDialog(),
-        });
+        const applied = wm.config.resolve(window.candidate());
+        window.ruled = applied;
+        window.rules_stale = false;
 
         window.float = applied.float orelse window.isDialog();
 
@@ -717,6 +725,8 @@ pub fn manage(window: *Window) void {
             window.limits.max.width,
             window.limits.max.height,
         });
+    } else if (window.rules_stale) {
+        window.reapplyRules();
     }
 
     switch (window.pointer_request) {
@@ -728,9 +738,13 @@ pub fn manage(window: *Window) void {
 
     switch (window.fullscreen_request) {
         .none => {},
-        .enter => |hint| window.fullscreen = hint orelse window.currentOutput(),
+        .enter => |hint| {
+            window.fullscreen = hint orelse window.currentOutput();
+            window.manual.fullscreen = true;
+        },
         .exit => {
             window.fullscreen = null;
+            window.manual.fullscreen = true;
             wm.ipc_dirty = true;
         },
     }
@@ -744,6 +758,67 @@ pub fn manage(window: *Window) void {
     if (window.fullscreen != null) return;
 
     window.syncBounds();
+}
+
+fn candidate(window: *const Window) Config.Candidate {
+    return .{
+        .app_id = window.app_id,
+        .title = window.title,
+        .dialog = window.isDialog(),
+    };
+}
+
+fn reapplyRules(window: *Window) void {
+    window.rules_stale = false;
+
+    const next = wm.config.resolve(window.candidate());
+    var diff = Config.Resolved.changed(window.ruled, next);
+    window.ruled = next;
+
+    if (window.manual.workspace) diff.workspace = null;
+    // Like toggle_float, no float changes while fullscreen.
+    if (window.manual.float or window.fullscreen != null) diff.float = null;
+    if (window.manual.fullscreen) diff.fullscreen = null;
+    // Drop no-ops, so the log below shows only real changes.
+    if (diff.workspace) |id| {
+        if (window.workspace) |ws| {
+            if (ws.id == id) diff.workspace = null;
+        }
+    }
+    if (diff.float) |on| {
+        if (window.float == on) diff.float = null;
+    }
+    if (diff.fullscreen) |on| {
+        if ((window.fullscreen != null) == on) diff.fullscreen = null;
+    }
+
+    if (diff.workspace) |id| window.moveByRule(Workspace.getOrCreate(id));
+    if (diff.float) |on| window.setFloat(on);
+    if (diff.fullscreen != null) window.toggleFullscreen();
+
+    if (!std.meta.eql(diff, Config.Resolved{})) {
+        log.debug("rules {s} app_id={?s} title={?s}: workspace={?d} float={?} fullscreen={?}", .{
+            window.identifier(),
+            window.app_id,
+            window.title,
+            diff.workspace,
+            diff.float,
+            diff.fullscreen,
+        });
+    }
+}
+
+fn moveByRule(window: *Window, target: *Workspace) void {
+    if (window.workspace == target) return;
+    window.setWorkspace(target);
+    if (window.float) target.raiseFloat();
+
+    var seats = list.safeIterator(Seat, .link, &wm.seats);
+    while (seats.next()) |seat| {
+        if (seat.focused != window or window.visible()) continue;
+        seat.dropFocus();
+        _ = seat.focus(null);
+    }
 }
 
 fn syncNewFocus(window: *Window, applied: Config.Resolved) void {
@@ -812,6 +887,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
 
         .parent => |args| {
             window.parent = if (args.parent) |p| fromObj(p) else null;
+            window.rules_stale = true;
             log.debug("parent {s} -> {}", .{ window.identifier(), window.parent != null });
         },
 
@@ -820,6 +896,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
                 fatal("Out of memory.", .{}))
             {
                 wm.ipc_dirty = true;
+                window.rules_stale = true;
                 log.debug("app_id {s} = {?s}", .{ window.identifier(), window.app_id });
             }
         },
@@ -829,6 +906,7 @@ fn listener(_: *river.WindowV1, event: river.WindowV1.Event, window: *Window) vo
                 fatal("Out of memory.", .{}))
             {
                 wm.ipc_dirty = true;
+                window.rules_stale = true;
                 log.debug("title {s} = {?s}", .{ window.identifier(), window.title });
             }
         },
