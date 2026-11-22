@@ -319,23 +319,24 @@ pub const Zone = struct {
 
 // -- arrangement ---------------------------------------------------------
 
-pub fn arrange(layout: *Eddy, area: geom.Rect) void {
+/// `bar`: output edges with an exclusive layer, for `.between` borders.
+pub fn arrange(layout: *Eddy, area: geom.Rect, bar: geom.Edges) void {
     const resized = !area.size().eql(layout.area.size());
     layout.area = area;
     if (resized) layout.orient();
 
     const root = layout.root orelse return;
-    place(root, area, area);
+    place(root, area, area, bar);
 }
 
-fn place(node: Node, rect: geom.Rect, area: geom.Rect) void {
+fn place(node: Node, rect: geom.Rect, area: geom.Rect, bar: geom.Edges) void {
     switch (node) {
-        .window => |w| w.applyPlacement(rules.place(rect, area, w.limits)),
+        .window => |w| w.applyPlacement(rules.place(rect, area, w.limits, bar)),
         .branch => |b| {
             b.rect = rect;
             const halves = subdivide(rect, b.split, b.ratio);
-            place(b.children[0], halves[0], area);
-            place(b.children[1], halves[1], area);
+            place(b.children[0], halves[0], area, bar);
+            place(b.children[1], halves[1], area, bar);
         },
     }
 }
@@ -1035,13 +1036,13 @@ test "a resize never flips a split" {
     layout.insert(&b, &a, null);
     layout.insert(&c, &b, null);
     defer testFree(&layout);
-    layout.arrange(area);
+    layout.arrange(area, .{});
 
     const inner = layout.root.?.branch.children[1].branch;
     try std.testing.expectEqual(Split.horizontal, inner.split);
 
     // shrinking a makes [b / c] wider than tall, it stays stacked.
     resize(&a, -500, 0);
-    layout.arrange(area);
+    layout.arrange(area, .{});
     try std.testing.expectEqual(Split.horizontal, inner.split);
 }
