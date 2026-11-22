@@ -84,7 +84,7 @@ pub fn run(loop: *Loop) !void {
         }
 
         if (loop.display.flush() != .SUCCESS) return loop.lost(.read_prepared);
-        if (wm.server) |*server| server.fill(loop.fds[ipc_fds..]);
+        if (wm.server) |*server| server.fill(loop.fds[ipc_fds..], wm.millis());
 
         const ready = posix.poll(&loop.fds, wm.pollTimeout()) catch |err| {
             loop.display.cancelRead();
@@ -129,7 +129,7 @@ pub fn run(loop: *Loop) !void {
             }
         }
 
-        if (wm.server) |*server| server.dispatch(loop.fds[ipc_fds..], handler.handle);
+        if (wm.server) |*server| server.dispatch(loop.fds[ipc_fds..], handler.handle, wm.millis());
         wm.tick();
         if (wm.dirty) {
             wm.dirty = false;
