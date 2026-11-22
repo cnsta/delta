@@ -41,7 +41,7 @@ fn windows(arena: Allocator) ![]const protocol.Window {
             .id = window.identifier(),
             .app_id = window.app_id,
             .title = window.title,
-            .workspace = if (window.workspace) |ws| ws.id else null,
+            .workspace = workspaceId(window),
             .focused = window.focus_count > 0,
             .float = window.float,
             .fullscreen = window.fullscreen != null,
@@ -64,7 +64,7 @@ pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
             .id = window.identifier(),
             .app_id = window.app_id,
             .title = window.title,
-            .workspace = if (window.workspace) |ws| ws.id else null,
+            .workspace = workspaceId(window),
             .focused = window.focus_count > 0,
             .float = window.float,
             .fullscreen = window.fullscreen != null,
@@ -80,6 +80,7 @@ pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
 
             .dialog = window.isDialog(),
             .hidden = window.hidden,
+            .scratchpad = window.workspace == &wm.scratchpad,
 
             .decoration = if (window.decoration_hint) |h| decorationName(h) else null,
             .presentation = if (window.presentation_hint) |h| presentationName(h) else null,
@@ -88,6 +89,12 @@ pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
     }
 
     return out.items;
+}
+
+fn workspaceId(window: *const Window) ?u32 {
+    const ws = window.workspace orelse return null;
+    if (ws == &wm.scratchpad) return null;
+    return ws.id;
 }
 
 fn geometry(window: *const Window) ?protocol.Rect {
@@ -311,7 +318,10 @@ fn transformName(transform: wl.Output.Transform) []const u8 {
 
 fn focusedWorkspace() ?*Workspace {
     const seat = wm.activeSeat() orelse return null;
-    return seat.workspace();
+    const ws = seat.workspace() orelse return null;
+    if (ws != &wm.scratchpad) return ws;
+    const output = ws.output orelse return null;
+    return output.workspace;
 }
 
 fn focusedOutput() ?*Output {

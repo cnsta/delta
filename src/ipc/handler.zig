@@ -72,7 +72,7 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
                 if (action.spawn.len == 0) {
                     return try stringify(arena, protocol.Reply{ .err = "spawn needs a command" });
                 }
-                if (!wm.desktop_shown) spawn(action.spawn);
+                if (!wm.hide_all) spawn(action.spawn);
                 return try stringify(arena, protocol.Reply{ .ok = {} });
             }
 

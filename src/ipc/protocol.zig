@@ -113,6 +113,7 @@ pub const WindowInfo = struct {
 
     dialog: bool = false,
     hidden: bool = false,
+    scratchpad: bool = false,
 
     decoration: ?[]const u8 = null,
     presentation: ?[]const u8 = null,
