@@ -68,10 +68,10 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
         },
 
         .action => |action| {
+            if (action.invalid()) |reason| {
+                return try stringify(arena, protocol.Reply{ .err = reason });
+            }
             if (action == .spawn) {
-                if (action.spawn.len == 0) {
-                    return try stringify(arena, protocol.Reply{ .err = "spawn needs a command" });
-                }
                 if (!wm.hide_all) spawn(action.spawn);
                 return try stringify(arena, protocol.Reply{ .ok = {} });
             }
@@ -80,7 +80,10 @@ fn reply(arena: std.mem.Allocator, request: []const u8, streaming: *bool) ![]con
                 return try stringify(arena, protocol.Reply{ .err = "no seat" });
             };
 
-            if (!seat.pending.push(action)) {
+            const owned = action.dupe(seat.ipc_args.allocator()) catch {
+                return try stringify(arena, protocol.Reply{ .err = "out of memory" });
+            };
+            if (!seat.pending.push(owned)) {
                 return try stringify(arena, protocol.Reply{ .err = "action queue is full" });
             }
             wm.dirty = true;
