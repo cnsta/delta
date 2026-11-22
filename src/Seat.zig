@@ -532,7 +532,11 @@ pub fn warpTo(seat: *Seat, window: ?*Window) void {
 
 pub fn focusNext(seat: *Seat) void {
     const ws = seat.workspace() orelse return;
-    if (seat.focus(ws.windows.first())) seat.warpTo(seat.focused);
+    var it = ws.windows.iterator(.forward);
+    const target = while (it.next()) |w| {
+        if (!w.unfocusable()) break w;
+    } else return;
+    if (seat.focus(target)) seat.warpTo(seat.focused);
 }
 
 pub fn focusDirection(seat: *Seat, dir: geom.Direction) void {
