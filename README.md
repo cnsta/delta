@@ -15,7 +15,8 @@ stable. Expect the config format to change, and things to break; I do this on my
 spare time as a hobby. Contributions are appreciated, but perhaps forking the
 code and building something for yourself is more advisible.
 
-**Works:** bsp-ish tiling, workspaces, floating windows, fullscreen, keyboard
+**Works:** bsp-ish tiling, workspaces, a global scratchpad (super+Tab shows it,
+super+shift+s sends a window in or back), floating windows, fullscreen, keyboard
 and pointer resize, directional focus, key repeat, keymaps (xkb layout, variant
 and options, with per-device overrides), pointer acceleration (flat, adaptive,
 or a custom maccel-style curve), touchpad settings, cursor theme, pointer

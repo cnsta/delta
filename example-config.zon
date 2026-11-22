@@ -99,7 +99,13 @@
         .{ .mods = .{.super}, .keys = .{"q"}, .action = .close },
         .{ .mods = .{.super}, .keys = .{"f"}, .action = .toggle_fullscreen },
         .{ .mods = .{ .super, .shift }, .keys = .{"f"}, .action = .toggle_float },
-        .{ .mods = .{.super}, .keys = .{"Tab"}, .action = .show_desktop },
+        // The scratchpad is one global workspace drawn over the focused output:
+        // super+Tab slides that output's windows away and the scratchpad's in
+        // (an empty scratchpad shows the desktop). send_to_scratchpad on a
+        // scratchpad window sends it back to the workspace it came from.
+        // show_desktop is a deprecated alias of scratchpad.
+        .{ .mods = .{.super}, .keys = .{"Tab"}, .action = .scratchpad },
+        .{ .mods = .{ .super, .shift }, .keys = .{"s"}, .action = .send_to_scratchpad },
 
         .{ .mods = .{.super}, .keys = .{ "h", "Left" }, .action = .{ .focus_direction = .left } },
         .{ .mods = .{.super}, .keys = .{ "j", "Down" }, .action = .{ .focus_direction = .down } },
