@@ -47,6 +47,7 @@ branch: ?*Eddy.Branch = null,
 limits: rules.Limits = .{},
 
 placed: ?geom.Point = null,
+clip_applied: geom.Rect = geom.Rect.zero,
 motion: animation.Lerp = .zero,
 desktop_offset: animation.Lerp = .zero,
 desktop_enter: bool = false,
@@ -54,6 +55,9 @@ pending_move: ?Destination = null,
 scratch_home: ?Workspace.Id = null,
 bounds: geom.Size = geom.Size.zero,
 fade: ?Overlay = null,
+drop_preview: ?Overlay = null,
+stashed: bool = false,
+sticky: bool = false,
 fade_alpha: animation.Fade = .{ .settled = 0 },
 pending_fade: bool = true,
 proposed: geom.Size = geom.Size.zero,
@@ -89,9 +93,11 @@ capture_sessions: ?u32 = null,
 overshoot: geom.Size = geom.Size.zero,
 
 focus_count: u8 = 0,
+focus_serial: u64 = 0,
 
 fullscreen: ?*Output = null,
 fullscreen_applied: ?*Output = null,
+fullscreen_deferred: bool = false,
 fullscreen_request: FullscreenRequest = .none,
 pointer_request: PointerRequest = .none,
 
@@ -163,6 +169,7 @@ pub fn maybeDestroy(window: *Window) void {
 
     if (window.fade) |*fade| fade.destroy();
     window.fade = null;
+    window.hideDropPreview();
 
     var seats = list.safeIterator(Seat, .link, &wm.seats);
     while (seats.next()) |seat| seat.forgetWindow(window);
@@ -249,7 +256,10 @@ pub fn setPosition(window: *Window, x: i32, y: i32) void {
 
 pub fn syncPosition(window: *Window) void {
     const ws = window.workspace orelse return;
-    const origin = ws.origin() orelse return;
+    const origin = if (window.sticky and ws.output != null)
+        geom.Point{ .x = ws.output.?.x, .y = ws.output.?.y }
+    else
+        ws.origin() orelse return;
 
     const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
     const now = wm.millis();
@@ -265,12 +275,24 @@ pub fn syncPosition(window: *Window) void {
         .x = origin.x + local.x + desktop.x + anchor.x,
         .y = origin.y + local.y + desktop.y + anchor.y,
     };
+
+    const home = ws.output orelse ws.last_output;
+    const sliding = home != null and
+        (origin.x != home.?.x or origin.y != home.?.y or !desktop.eql(geom.Point.zero));
+    window.syncClip(if (sliding) home.?.rect().translate(-at.x, -at.y) else geom.Rect.zero);
+
     if (window.placed) |last| {
         if (last.eql(at)) return;
     }
 
     window.node.setPosition(at.x, at.y);
     window.placed = at;
+}
+
+fn syncClip(window: *Window, clip: geom.Rect) void {
+    if (window.clip_applied.eql(clip)) return;
+    window.obj.setClipBox(clip.x, clip.y, clip.width, clip.height);
+    window.clip_applied = clip;
 }
 
 fn anchorOffset(window: *const Window) geom.Point {
@@ -384,6 +406,26 @@ fn syncBounds(window: *Window) void {
     window.bounds = wanted;
 }
 
+pub fn showDropPreview(window: *Window, rect: geom.Rect) void {
+    if (window.drop_preview == null) {
+        window.drop_preview = Overlay.create(window) orelse return;
+    }
+    window.drop_preview.?.update(
+        .{ .x = rect.x, .y = rect.y },
+        rect.size(),
+        Overlay.Color.rgba(wm.config.border.focused, 0.35),
+    );
+}
+
+pub fn hideDropPreview(window: *Window) void {
+    if (window.drop_preview) |*overlay| overlay.destroy();
+    window.drop_preview = null;
+}
+
+pub fn bordered(window: *const Window) bool {
+    return window.ruled.border orelse true;
+}
+
 pub fn applyPlacement(window: *Window, p: rules.Placement) void {
     if (window.float) return;
 
@@ -399,7 +441,9 @@ pub fn applyFloat(window: *Window, area: geom.Rect) void {
         window.float_box = window.initialFloatBox(area);
     }
 
-    window.apply(rules.placeFloat(window.float_box, area, window.limits));
+    var p = rules.placeFloat(window.float_box, area, window.limits);
+    if (!window.bordered()) p.borders = .{};
+    window.apply(p);
 }
 
 fn initialFloatBox(window: *const Window, area: geom.Rect) geom.Rect {
@@ -410,12 +454,13 @@ fn initialFloatBox(window: *const Window, area: geom.Rect) geom.Rect {
         break :middle parent.slot.center();
     };
 
-    return .{
+    const natural: geom.Rect = .{
         .x = middle.x - @divTrunc(window.width, 2),
         .y = middle.y - @divTrunc(window.height, 2),
         .width = window.width,
         .height = window.height,
     };
+    return rules.ruleBox(area, natural, window.ruled.size, window.ruled.position);
 }
 
 fn apply(window: *Window, p: rules.Placement) void {
@@ -485,8 +530,18 @@ fn currentOutput(window: *Window) ?*Output {
 }
 
 pub fn toggleFullscreen(window: *Window) void {
-    window.fullscreen = if (window.fullscreen != null) null else window.currentOutput();
+    if (window.wantsFullscreen()) {
+        window.fullscreen = null;
+        window.fullscreen_deferred = false;
+    } else {
+        window.fullscreen = window.currentOutput();
+        window.fullscreen_deferred = window.fullscreen == null;
+    }
     wm.ipc_dirty = true;
+}
+
+pub fn wantsFullscreen(window: *const Window) bool {
+    return window.fullscreen != null or window.fullscreen_deferred;
 }
 
 fn syncFullscreen(window: *Window) void {
@@ -522,7 +577,9 @@ pub fn setFloat(window: *Window, on: bool) void {
     if (on) {
         ws.layout.remove(window);
 
-        if (window.float_box.width == 0 and window.slot.width > 0) {
+        // Rule geometry is applied by initialFloatBox() at arrange.
+        const ruled = window.ruled.size != null or window.ruled.position != null;
+        if (window.float_box.width == 0 and window.slot.width > 0 and !ruled) {
             window.float_box = window.slot;
         }
     } else {
@@ -557,7 +614,20 @@ pub fn scratchHidden(window: *const Window) bool {
 }
 
 pub fn desktopHidden(window: *const Window) bool {
-    return wm.hide_all or window.scratchHidden();
+    return wm.hide_all or window.unfocusable();
+}
+
+/// Hidden by delta (scratchpad slide, pending move, toggle_app), so it may
+/// not take focus. The lock is not in here.
+pub fn unfocusable(window: *const Window) bool {
+    return window.stashed or window.scratchHidden();
+}
+
+pub fn setSticky(window: *Window, on: bool) void {
+    if (window.sticky == on) return;
+    window.sticky = on;
+    if (on) window.setFloat(true);
+    wm.ipc_dirty = true;
 }
 
 fn escapeOffset(window: *Window) ?geom.Point {
@@ -658,8 +728,12 @@ fn syncResizing(window: *Window) void {
 }
 
 pub fn syncVisibility(window: *Window) void {
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
+    const slid_away = window.desktopHidden() and
+        window.desktop_offset.done(wm.millis(), duration) and
+        !window.desktop_offset.goal().eql(geom.Point.zero);
     const want_hidden = !window.visible() or window.slot.width == 0 or window.slot.height == 0 or
-        (window.fullscreen != null and window.scratchHidden());
+        (window.fullscreen != null and window.unfocusable()) or slid_away;
     if (want_hidden == window.hidden) return;
 
     if (want_hidden) window.obj.hide() else window.obj.show();
@@ -781,11 +855,22 @@ pub fn manage(window: *Window) void {
         window.rules_stale = false;
 
         window.float = applied.float orelse window.isDialog();
+        if (applied.sticky orelse false) {
+            window.sticky = true;
+            window.float = true;
+        }
 
         window.setWorkspace(if (applied.workspace) |id|
             Workspace.getOrCreate(id)
+        else if (ruledOutput(applied)) |output|
+            output.workspace
         else
             window.initialWorkspace());
+
+        if (applied.scratchpad orelse false) {
+            window.scratch_home = window.workspace.?.id;
+            window.setWorkspace(&wm.scratchpad);
+        }
 
         if (window.float) {
             if (window.workspace) |ws| ws.raiseFloat();
@@ -820,15 +905,24 @@ pub fn manage(window: *Window) void {
         .none => {},
         .enter => |hint| {
             window.fullscreen = hint orelse window.currentOutput();
+            window.fullscreen_deferred = window.fullscreen == null;
             window.manual.fullscreen = true;
         },
         .exit => {
             window.fullscreen = null;
+            window.fullscreen_deferred = false;
             window.manual.fullscreen = true;
             wm.ipc_dirty = true;
         },
     }
     window.fullscreen_request = .none;
+    if (window.fullscreen_deferred) {
+        if (window.currentOutput()) |output| {
+            window.fullscreen = output;
+            window.fullscreen_deferred = false;
+            wm.ipc_dirty = true;
+        }
+    }
     window.syncFullscreen();
     window.syncResizing();
     window.syncDecorationMode();
@@ -868,23 +962,46 @@ fn reapplyRules(window: *Window) void {
         if (window.float == on) diff.float = null;
     }
     if (diff.fullscreen) |on| {
-        if ((window.fullscreen != null) == on) diff.fullscreen = null;
+        if (window.wantsFullscreen() == on) diff.fullscreen = null;
     }
 
-    if (diff.workspace) |id| window.moveByRule(Workspace.getOrCreate(id));
+    if (diff.scratchpad) |on| {
+        const inside = window.workspace == &wm.scratchpad;
+        if (!on or inside or window.manual.workspace) diff.scratchpad = null;
+    }
+    if (window.manual.workspace or diff.workspace != null or diff.scratchpad != null) diff.output = null;
+
+    if (diff.scratchpad != null) {
+        window.scratch_home = if (window.workspace) |ws| ws.id else null;
+        window.moveByRule(&wm.scratchpad);
+    } else if (diff.workspace) |id| {
+        window.moveByRule(Workspace.getOrCreate(id));
+    } else if (ruledOutput(diff)) |output| {
+        window.moveByRule(output.workspace);
+    }
     if (diff.float) |on| window.setFloat(on);
+    if (diff.sticky) |on| {
+        if (on and !window.sticky) window.setSticky(true);
+    }
     if (diff.fullscreen != null) window.toggleFullscreen();
 
     if (!std.meta.eql(diff, Config.Resolved{})) {
-        log.debug("rules {s} app_id={?s} title={?s}: workspace={?d} float={?} fullscreen={?}", .{
+        log.debug("rules {s} app_id={?s} title={?s}: workspace={?d} output={?s} scratchpad={?} float={?} fullscreen={?}", .{
             window.identifier(),
             window.app_id,
             window.title,
             diff.workspace,
+            if (diff.output) |o| o.text else null,
+            diff.scratchpad,
             diff.float,
             diff.fullscreen,
         });
     }
+}
+
+fn ruledOutput(applied: Config.Resolved) ?*Output {
+    const pattern = applied.output orelse return null;
+    return Output.matching(pattern.text);
 }
 
 fn moveByRule(window: *Window, target: *Workspace) void {
