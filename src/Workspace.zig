@@ -9,6 +9,7 @@ const geom = @import("util/geom.zig");
 const seatpick = @import("util/seatpick.zig");
 
 const Eddy = @import("layouts/Eddy.zig");
+const rules = @import("layouts/rules.zig");
 const animation = @import("util/animation.zig");
 
 const Output = @import("Output.zig");
@@ -97,9 +98,10 @@ fn insertBefore(before: *wl.list.Link, id: Id) *Workspace {
     return ws;
 }
 
-pub fn arrange(ws: *Workspace, area: geom.Rect) void {
+pub fn arrange(ws: *Workspace, output: *const Output) void {
+    const area = rules.workArea(output);
     ws.repairLayout();
-    ws.layout.arrange(area);
+    ws.layout.arrange(area, output.blockedEdges());
 
     var it = ws.windows.iterator(.forward);
     while (it.next()) |window| {
