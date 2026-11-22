@@ -48,6 +48,7 @@ pub const Input = struct {
     focus_follows_pointer: bool = true,
     focus_new_windows: bool = true,
     follow_sent_windows: bool = false,
+    workspace_back_and_forth: bool = false,
 
     cursor: Cursor = .{},
     drag_threshold: i32 = 10,
@@ -234,7 +235,16 @@ pub const WindowRule = struct {
     workspace: ?u32 = null,
     focused: ?bool = null,
     warp: ?bool = null,
+    size: ?RuleSize = null,
+    position: ?RulePosition = null,
+    output: ?[]const u8 = null,
+    border: ?bool = null,
+    scratchpad: ?bool = null,
+    sticky: ?bool = null,
 };
+
+pub const RuleSize = struct { width: f32, height: f32 };
+pub const RulePosition = struct { x: f32, y: f32 };
 
 pub const Match = struct {
     app_id: ?[]const u8 = null,
@@ -255,12 +265,33 @@ pub const Resolved = struct {
     workspace: ?u32 = null,
     focused: ?bool = null,
     warp: ?bool = null,
+    size: ?RuleSize = null,
+    position: ?RulePosition = null,
+    output: ?OutputPattern = null,
+    border: ?bool = null,
+    scratchpad: ?bool = null,
+    sticky: ?bool = null,
+
+    pub const OutputPattern = struct {
+        text: []const u8,
+        hash: u64,
+
+        fn of(text: []const u8) OutputPattern {
+            return .{ .text = text, .hash = std.hash.Wyhash.hash(0, text) };
+        }
+    };
 
     pub fn changed(prev: Resolved, next: Resolved) Resolved {
         return .{
             .float = newOpinion(bool, prev.float, next.float),
             .fullscreen = newOpinion(bool, prev.fullscreen, next.fullscreen),
             .workspace = newOpinion(u32, prev.workspace, next.workspace),
+            .output = if (next.output) |o|
+                (if (prev.output != null and prev.output.?.hash == o.hash) null else o)
+            else
+                null,
+            .scratchpad = newOpinion(bool, prev.scratchpad, next.scratchpad),
+            .sticky = newOpinion(bool, prev.sticky, next.sticky),
         };
     }
 
@@ -284,6 +315,12 @@ pub fn resolve(config: *const Config, candidate: Candidate) Resolved {
         if (rule.workspace) |v| result.workspace = v;
         if (rule.focused) |v| result.focused = v;
         if (rule.warp) |v| result.warp = v;
+        if (rule.size) |v| result.size = v;
+        if (rule.position) |v| result.position = v;
+        if (rule.output) |v| result.output = .of(v);
+        if (rule.border) |v| result.border = v;
+        if (rule.scratchpad) |v| result.scratchpad = v;
+        if (rule.sticky) |v| result.sticky = v;
     }
 
     return result;
@@ -451,6 +488,10 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
 
     if (config.bindings) |bindings| {
         for (bindings) |binding| {
+            if (binding.action.invalid()) |reason| {
+                report.* = try std.fmt.allocPrint(gpa, "binding .{s}: {s}", .{ @tagName(binding.action), reason });
+                return true;
+            }
             if (binding.keys.len == 0) {
                 report.* = try std.fmt.allocPrint(gpa, "a binding needs at least one key", .{});
                 return true;
@@ -470,7 +511,27 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
             }
         }
     }
+    if (config.pointer_bindings) |bindings| {
+        for (bindings) |binding| {
+            if (binding.action.invalid()) |reason| {
+                report.* = try std.fmt.allocPrint(gpa, "pointer binding .{s}: {s}", .{ @tagName(binding.action), reason });
+                return true;
+            }
+        }
+    }
     for (config.window_rules) |rule| {
+        if (rule.size) |size| {
+            if (!(size.width > 0 and size.height > 0) or !std.math.isFinite(size.width) or !std.math.isFinite(size.height)) {
+                report.* = try std.fmt.allocPrint(gpa, "window rule .size must be positive, found {d}x{d}", .{ size.width, size.height });
+                return true;
+            }
+        }
+        if (rule.position) |pos| {
+            if (!(pos.x >= 0 and pos.y >= 0) or !std.math.isFinite(pos.x) or !std.math.isFinite(pos.y)) {
+                report.* = try std.fmt.allocPrint(gpa, "window rule .position must not be negative, found {d},{d}", .{ pos.x, pos.y });
+                return true;
+            }
+        }
         if (rule.workspace) |id| {
             if (id < 1 or id > 9) {
                 report.* = try std.fmt.allocPrint(
