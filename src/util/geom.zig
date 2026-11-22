@@ -58,6 +58,10 @@ pub const Rect = struct {
         return a.x == b.x and a.y == b.y and
             a.width == b.width and a.height == b.height;
     }
+
+    pub fn translate(r: Rect, dx: i32, dy: i32) Rect {
+        return .{ .x = r.x + dx, .y = r.y + dy, .width = r.width, .height = r.height };
+    }
 };
 
 pub const Direction = enum {
