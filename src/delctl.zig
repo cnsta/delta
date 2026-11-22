@@ -529,6 +529,7 @@ fn renderWindow(
         .{ window.fullscreen, "fullscreen" },
         .{ window.dialog, "dialog" },
         .{ window.hidden, "hidden" },
+        .{ window.scratchpad, "scratchpad" },
     }) |flag| {
         if (flag[0]) try flags.print(arena, " {s}", .{flag[1]});
     }
