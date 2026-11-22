@@ -6,7 +6,6 @@ const wl = wayland.client.wl;
 const wp = wayland.client.wp;
 const zwlr = wayland.client.zwlr;
 
-const rules = @import("layouts/rules.zig");
 const list = @import("util/list.zig");
 const geom = @import("util/geom.zig");
 const spawn = @import("spawn.zig").spawn;
@@ -215,9 +214,9 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |workspace| {
             const output = workspace.output orelse continue;
 
-            workspace.arrange(rules.workArea(output));
+            workspace.arrange(output);
         }
-        if (delta.scratchpad.output) |output| delta.scratchpad.arrange(rules.workArea(output));
+        if (delta.scratchpad.output) |output| delta.scratchpad.arrange(output);
     }
     {
         var it = list.safeIterator(Workspace, .link, &delta.workspaces);
@@ -232,6 +231,7 @@ fn manageStart(delta: *Delta) void {
         var it = list.safeIterator(Window, .link, &delta.windows);
         while (it.next()) |window| {
             window.syncSize();
+            window.syncDecoration();
             window.syncVisibility();
             window.syncFadeState();
             window.syncDesktopHidden();
@@ -262,7 +262,7 @@ pub fn toggleScratchpad(delta: *Delta, seat: *Seat) void {
     if (delta.scratchpad_open) delta.closeScratchpad() else delta.openScratchpad(seat);
 }
 
-/// slides the seat's output's windows away and the scratchpad's in.
+/// Slides the seat's output's windows away and the scratchpad's in.
 pub fn openScratchpad(delta: *Delta, seat: *Seat) void {
     if (delta.scratchpad_open) return;
     const output = seat.output orelse delta.outputs.first() orelse return;
@@ -306,7 +306,7 @@ fn scratchpadChanged(delta: *Delta) void {
     delta.publishShowDesktop();
 }
 
-/// lets go of the output once a closed scratchpad's windows are off screen.
+/// Lets go of the output once a closed scratchpad's windows are off screen.
 fn settleScratchpad(delta: *Delta) void {
     if (delta.scratchpad_open or delta.scratchpad.output == null) return;
 
