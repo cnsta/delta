@@ -9,7 +9,9 @@ const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
+const glob = @import("util/glob.zig");
 const seatpick = @import("util/seatpick.zig");
+const spawn = @import("spawn.zig").spawn;
 
 const Action = @import("input/action.zig").Action;
 const Eddy = @import("layouts/Eddy.zig");
@@ -59,6 +61,10 @@ pointer_known: bool = false,
 
 output: ?*Output = null,
 
+last_workspace: ?Workspace.Id = null,
+
+ipc_args: std.heap.ArenaAllocator,
+
 pub const LayerFocus = enum { none, non_exclusive, exclusive };
 
 // -- lifecycle ---------------------------------------------------------
@@ -70,6 +76,7 @@ pub fn create(river_seat: *river.SeatV1) void {
         .link = undefined,
         .xkb_bindings = undefined,
         .pointer_bindings = undefined,
+        .ipc_args = .init(wm.gpa),
     };
     seat.xkb_bindings.init();
     seat.pointer_bindings.init();
@@ -113,6 +120,7 @@ pub fn maybeDestroy(seat: *Seat) void {
 
     if (wm.active_seat == seat) wm.active_seat = null;
 
+    seat.ipc_args.deinit();
     seat.obj.destroy();
     seat.link.remove();
     wm.gpa.destroy(seat);
@@ -138,7 +146,17 @@ pub fn forgetWindow(seat: *Seat, window: *Window) void {
 
     switch (seat.op) {
         .none => {},
-        inline .move, .resize => |args| if (args.window == window) {
+        .move => |*m| {
+            if (m.drop) |drop| {
+                if (drop.target == window) clearDrop(m);
+            }
+            if (m.window == window) {
+                clearDrop(m);
+                seat.obj.opEnd();
+                seat.op = .none;
+            }
+        },
+        .resize => |args| if (args.window == window) {
             seat.obj.opEnd();
             seat.op = .none;
         },
@@ -162,7 +180,7 @@ pub fn workspace(seat: *Seat) ?*Workspace {
 fn focusState(seat: *const Seat) seatpick.Focus {
     const window = seat.focused orelse return .none;
     const ws = window.workspace;
-    const shown = if (ws) |w| w.output != null and !window.scratchHidden() else false;
+    const shown = if (ws) |w| w.output != null and !window.unfocusable() else false;
     return seatpick.classifyFocus(true, ws != null, shown);
 }
 
@@ -234,10 +252,12 @@ pub fn manage(seat: *Seat) void {
     seat.focus_resync = false;
 
     while (seat.pending.pop()) |action| action.execute(seat);
+    _ = seat.ipc_args.reset(.retain_capacity);
 
     const op_timeout_ms = 30_000;
 
     if (seat.op_release) {
+        seat.finishDrop();
         seat.endOp();
     } else if (seat.op != .none and wm.millis() - seat.op_started > op_timeout_ms) {
         log.warn("pointer op ran for {d}ms without a release, ending it", .{
@@ -326,6 +346,10 @@ pub fn applyWarp(seat: *Seat) void {
 
 fn endOp(seat: *Seat) void {
     if (seat.op == .none) return;
+    switch (seat.op) {
+        .move => |*m| clearDrop(m),
+        else => {},
+    }
 
     seat.obj.opEnd();
     seat.op = .none;
@@ -349,29 +373,61 @@ pub const Op = union(enum) {
 
         dragging: bool = false,
 
-        last_target: ?*Window = null,
+        drop: ?Drop = null,
+    };
+
+    /// The tile under the pointer and where in it, applied on release.
+    pub const Drop = struct {
+        target: *Window,
+        tile: geom.Rect,
+        point: geom.Point,
     };
 };
 
 fn dragTiled(seat: *Seat, m: *Op.Move) void {
     if (!seat.pointer_known) return;
 
-    const ws = m.window.workspace orelse return;
-    const origin = ws.origin() orelse return;
+    const ws = m.window.workspace orelse return clearDrop(m);
+    const origin = ws.origin() orelse return clearDrop(m);
 
     const point: geom.Point = .{
         .x = seat.pointer.x - origin.x,
         .y = seat.pointer.y - origin.y,
     };
+    if (!ws.layout.area.contains(point)) return clearDrop(m);
 
-    const target = ws.layout.windowAt(point) orelse return;
+    const hit = ws.layout.tileAt(point) orelse return clearDrop(m);
+    if (hit.window == m.window) return clearDrop(m);
 
-    if (target == m.window) return;
+    if (m.drop) |old| {
+        if (old.target != hit.window) old.target.hideDropPreview();
+    }
+    m.drop = .{ .target = hit.window, .tile = hit.rect, .point = point };
 
-    if (m.last_target == target) return;
+    const zone = Eddy.dropZone(hit.rect, point);
+    hit.window.showDropPreview(Eddy.dropPreview(hit.window.slot.size(), zone));
+}
 
-    m.last_target = target;
-    ws.layout.swap(m.window, target);
+fn clearDrop(m: *Op.Move) void {
+    const drop = m.drop orelse return;
+    drop.target.hideDropPreview();
+    m.drop = null;
+}
+
+fn finishDrop(seat: *Seat) void {
+    const m = switch (seat.op) {
+        .move => |*m| m,
+        else => return,
+    };
+    const drop = m.drop orelse return;
+    clearDrop(m);
+    if (!m.dragging or m.window.float) return;
+
+    const ws = m.window.workspace orelse return;
+    ws.layout.dropOnto(m.window, drop.target, drop.tile, drop.point);
+    wm.dirty = true;
+    wm.ipc_dirty = true;
+    seat.warpTo(m.window);
 }
 
 pub fn tick(seat: *Seat, now: i64) void {
@@ -416,7 +472,7 @@ fn focusAndMaybeRaise(seat: *Seat, window: ?*Window, raise_it: bool) bool {
         if (w.workspace) |ws| {
             if (ws.output == null) return false;
         }
-        if (w.scratchHidden()) return false;
+        if (w.unfocusable()) return false;
     }
 
     if (seat.focused == target) return false;
@@ -427,6 +483,8 @@ fn focusAndMaybeRaise(seat: *Seat, window: ?*Window, raise_it: bool) bool {
         seat.obj.focusWindow(w.obj);
         if (raise_it) raise(w);
         w.focus_count += 1;
+        wm.focus_serial += 1;
+        w.focus_serial = wm.focus_serial;
     } else {
         seat.obj.clearFocus();
     }
@@ -517,11 +575,87 @@ pub fn toggleSplit(seat: *Seat) void {
     wm.dirty = true;
 }
 
+fn baseWorkspace(seat: *Seat) ?*Workspace {
+    const ws = seat.workspace() orelse return null;
+    if (ws != &wm.scratchpad) return ws;
+    const output = seat.output orelse return null;
+    return output.workspace;
+}
+
+pub fn focusWorkspaceAction(seat: *Seat, id: Workspace.Id) void {
+    if (wm.config.input.workspace_back_and_forth and !wm.scratchpad_open) {
+        if (seat.baseWorkspace()) |ws| {
+            if (ws.id == id) {
+                if (seat.last_workspace) |last| return seat.focusWorkspace(last);
+            }
+        }
+    }
+    seat.focusWorkspace(id);
+}
+
+pub fn focusWorkspacePrevious(seat: *Seat) void {
+    const last = seat.last_workspace orelse return;
+    seat.focusWorkspace(last);
+}
+
+pub const Step = enum { next, prev, next_occupied, prev_occupied };
+
+pub fn cycleWorkspace(seat: *Seat, step: Step) void {
+    const base = (seat.baseWorkspace() orelse return).id;
+    const target: ?Workspace.Id = switch (step) {
+        .next => if (base < std.math.maxInt(Workspace.Id)) base + 1 else null,
+        .prev => if (base > 1) base - 1 else null,
+        .next_occupied => blk: {
+            var it = wm.workspaces.iterator(.forward);
+            while (it.next()) |ws| {
+                if (ws.id > base and !ws.isEmpty()) break :blk ws.id;
+            }
+            break :blk null;
+        },
+        .prev_occupied => blk: {
+            var it = wm.workspaces.iterator(.reverse);
+            while (it.next()) |ws| {
+                if (ws.id < base and !ws.isEmpty()) break :blk ws.id;
+            }
+            break :blk null;
+        },
+    };
+    if (target) |id| seat.focusWorkspace(id);
+}
+
+pub fn focusLast(seat: *Seat) void {
+    var best: ?*Window = null;
+    var it = wm.windows.iterator(.forward);
+    while (it.next()) |w| {
+        if (w == seat.focused or w.focus_serial == 0 or w.workspace == null) continue;
+        if (w.stashed) continue;
+        if (best == null or w.focus_serial > best.?.focus_serial) best = w;
+    }
+    const target = best orelse return;
+    const ws = target.workspace.?;
+
+    if (ws == &wm.scratchpad) {
+        wm.openScratchpad(seat);
+    } else if (ws.output == null) {
+        seat.focusWorkspace(ws.id);
+    } else if (wm.scratchpad_open and wm.scratchpad.output == ws.output) {
+        wm.closeScratchpad();
+    }
+
+    seat.dropFocus();
+    if (seat.focus(target)) seat.warpTo(target);
+}
+
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
+    if (id == 0) return;
+    const before = seat.baseWorkspace();
     wm.closeScratchpad();
     const target = Workspace.getOrCreate(id);
 
     if (seat.workspace() == target) return;
+    if (before) |ws| {
+        if (ws != target) seat.last_workspace = ws.id;
+    }
 
     if (seat.output) |o| {
         o.setWorkspace(target);
@@ -534,6 +668,7 @@ pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
 }
 
 pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
+    if (id == 0) return;
     const window = seat.focused orelse return;
     const target = Workspace.getOrCreate(id);
     if (window.workspace == target) return;
@@ -553,6 +688,8 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     if (seat.focus(null)) seat.warpTo(seat.focused);
 }
 
+/// Sends the focused window to the scratchpad, or a scratchpad window back
+/// to the workspace it came from (else the one under the scratchpad).
 pub fn toggleScratchpadWindow(seat: *Seat) void {
     const window = seat.focused orelse return;
     const ws = window.workspace orelse return;
@@ -573,6 +710,63 @@ pub fn toggleScratchpadWindow(seat: *Seat) void {
 }
 
 // -- window actions ----------------------------------------------------
+
+pub fn toggleApp(seat: *Seat, args: []const []const u8) void {
+    const window = findApp(args[0]) orelse {
+        if (args.len > 1 and !wm.hide_all) spawn(args[1..]);
+        return;
+    };
+    const here = if (seat.output) |o| o.activeWorkspace() else Workspace.forNewWindow();
+
+    if (!window.stashed and window.workspace == here and window.visible() and !window.unfocusable()) {
+        if (seat.focused != window) {
+            if (seat.focus(window)) seat.warpTo(window);
+            return;
+        }
+        window.stashed = true;
+        wm.dirty = true;
+        wm.ipc_dirty = true;
+        seat.dropFocus();
+        if (seat.focus(null)) seat.warpTo(seat.focused);
+        return;
+    }
+
+    window.stashed = false;
+    window.pending_move = null;
+    window.scratch_home = null;
+    if (window.fullscreen == null) {
+        window.setFloat(true);
+        window.manual.float = true;
+    }
+    if (window.workspace != here) {
+        window.setWorkspace(here);
+        window.manual.workspace = true;
+        if (window.float) here.raiseFloat();
+    }
+    window.desktop_enter = true;
+    wm.dirty = true;
+    wm.ipc_dirty = true;
+
+    seat.dropFocus();
+    if (seat.focus(window)) seat.warpTo(window);
+}
+
+fn findApp(pattern: []const u8) ?*Window {
+    var it = wm.windows.iterator(.forward);
+    while (it.next()) |w| {
+        const app_id = w.app_id orelse continue;
+        if (w.workspace != null and glob.match(pattern, app_id)) return w;
+    }
+    return null;
+}
+
+pub fn toggleSticky(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    if (window.fullscreen != null) return;
+    window.setSticky(!window.sticky);
+    window.manual.float = true;
+    wm.dirty = true;
+}
 
 pub fn closeFocused(seat: *Seat) void {
     const window = seat.focused orelse return;
