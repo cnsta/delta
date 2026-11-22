@@ -76,6 +76,10 @@ pub fn maybeDestroy(ws: *Workspace) void {
     if (ws.animating()) return;
     if (!ws.isEmpty()) return;
 
+    ws.destroy();
+}
+
+pub fn destroy(ws: *Workspace) void {
     wm.ipc_dirty = true;
 
     std.debug.assert(ws.layout.isEmpty());
@@ -161,7 +165,7 @@ pub fn isEmpty(ws: *const Workspace) bool {
 pub fn lastFocusable(ws: *Workspace) ?*Window {
     var it = ws.windows.iterator(.reverse);
     while (it.next()) |window| {
-        if (!window.scratchHidden()) return window;
+        if (!window.unfocusable()) return window;
     }
     return null;
 }
@@ -220,32 +224,26 @@ pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*W
     const a = from.slot;
     if (a.width == 0) return null;
 
-    var best: ?*Window = null;
-    var best_gap: i32 = std.math.maxInt(i32);
-
+    var nearest: i32 = std.math.maxInt(i32);
     var it = ws.windows.iterator(.forward);
     while (it.next()) |other| {
         if (other == from or other.slot.width == 0) continue;
-        const b = other.slot;
+        const r = rules.reach(a, other.slot, dir) orelse continue;
+        nearest = @min(nearest, r.gap);
+    }
+    if (nearest == std.math.maxInt(i32)) return null;
 
-        const overlaps = switch (dir) {
-            .left, .right => b.y < a.y + a.height and a.y < b.y + b.height,
-            .up, .down => b.x < a.x + a.width and a.x < b.x + b.width,
-        };
-        if (!overlaps) continue;
-
-        const gap = switch (dir) {
-            .left => if (b.x + b.width <= a.x) a.x - (b.x + b.width) else continue,
-            .right => if (b.x >= a.x + a.width) b.x - (a.x + a.width) else continue,
-            .up => if (b.y + b.height <= a.y) a.y - (b.y + b.height) else continue,
-            .down => if (b.y >= a.y + a.height) b.y - (a.y + a.height) else continue,
-        };
-
-        if (gap < best_gap) {
+    var best: ?*Window = null;
+    var best_score: ?rules.Directional = null;
+    it = ws.windows.iterator(.forward);
+    while (it.next()) |other| {
+        if (other == from or other.slot.width == 0) continue;
+        const r = rules.reach(a, other.slot, dir) orelse continue;
+        const score: rules.Directional = .{ .reach = r, .serial = other.focus_serial };
+        if (rules.preferDirectional(score, best_score, nearest, rules.between())) {
             best = other;
-            best_gap = gap;
+            best_score = score;
         }
     }
-
     return best;
 }
