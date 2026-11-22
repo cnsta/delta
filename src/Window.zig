@@ -49,6 +49,9 @@ limits: rules.Limits = .{},
 placed: ?geom.Point = null,
 motion: animation.Lerp = .zero,
 desktop_offset: animation.Lerp = .zero,
+desktop_enter: bool = false,
+pending_move: ?Destination = null,
+scratch_home: ?Workspace.Id = null,
 bounds: geom.Size = geom.Size.zero,
 fade: ?Overlay = null,
 fade_alpha: animation.Fade = .{ .settled = 0 },
@@ -89,6 +92,18 @@ fullscreen: ?*Output = null,
 fullscreen_applied: ?*Output = null,
 fullscreen_request: FullscreenRequest = .none,
 pointer_request: PointerRequest = .none,
+
+pub const Destination = union(enum) {
+    scratchpad,
+    workspace: Workspace.Id,
+
+    pub fn resolve(dest: Destination) *Workspace {
+        return switch (dest) {
+            .scratchpad => &wm.scratchpad,
+            .workspace => |id| Workspace.getOrCreate(id),
+        };
+    }
+};
 
 pub const Manual = struct {
     float: bool = false,
@@ -349,6 +364,7 @@ pub fn animating(window: *const Window) bool {
     if (!window.visible()) return false;
 
     const duration = wm.config.animation.duration;
+    if (window.pending_move != null) return true;
     if (!window.motion.done(wm.millis(), duration)) return true;
     if (!window.desktop_offset.done(wm.millis(), duration)) return true;
     return !window.border_focus.done(wm.millis(), duration);
@@ -524,30 +540,87 @@ pub fn retargetDesktopOffset(window: *Window, target: geom.Point) void {
     wm.dirty = true;
 }
 
-pub fn setDesktopHidden(window: *Window, hidden: bool) void {
-    if (!hidden) {
-        window.retargetDesktopOffset(geom.Point.zero);
-        return;
-    }
-    if (window.fullscreen != null) return;
-    if (!window.visible()) return;
+/// Hidden for the scratchpad (see `rules.scratchHidden`). Unlike the lock,
+/// this also makes the window unfocusable.
+pub fn scratchHidden(window: *const Window) bool {
+    const ws = window.workspace orelse return window.pending_move != null;
+    const place: rules.ScratchPlace = if (ws == &wm.scratchpad)
+        .inside
+    else if (wm.scratchpad_open and wm.scratchpad.output != null and ws == wm.scratchpad.output.?.workspace)
+        .covered
+    else
+        .elsewhere;
+    return rules.scratchHidden(wm.scratchpad_open, place, window.pending_move != null);
+}
 
-    const ws = window.workspace orelse return;
-    const output = ws.output orelse ws.last_output orelse return;
+pub fn desktopHidden(window: *const Window) bool {
+    return wm.hide_all or window.scratchHidden();
+}
+
+fn escapeOffset(window: *Window) ?geom.Point {
+    if (window.fullscreen != null) return null;
+    if (!window.visible()) return null;
+
+    const ws = window.workspace orelse return null;
+    const output = ws.output orelse ws.last_output orelse return null;
     const blocked = output.blockedEdges();
     const box = if (window.slot.width > 0) window.slot else window.float_box;
     const escape = if (!window.float) Eddy.escapeDirection(window, blocked) else null;
 
     const dir = rules.showDesktopDirection(window.float, escape, box, output, blocked);
     const distance = rules.desktopClearance(box, dir, output);
-    window.retargetDesktopOffset(dir.delta(distance));
+    return dir.delta(distance);
 }
 
 pub fn syncDesktopHidden(window: *Window) void {
-    if (!wm.desktop_shown) return;
-    if (!window.desktop_offset.goal().eql(geom.Point.zero)) return;
+    const enter = window.desktop_enter;
+    window.desktop_enter = false;
+    const zero = geom.Point.zero;
 
-    window.setDesktopHidden(true);
+    if (window.desktopHidden()) {
+        if (!window.desktop_offset.goal().eql(zero)) return;
+        if (window.escapeOffset()) |off| window.retargetDesktopOffset(off);
+        return;
+    }
+
+    const away = window.desktop_offset == .settled and !window.desktop_offset.goal().eql(zero);
+    if (enter or away) {
+        if (window.escapeOffset()) |off| {
+            window.motion.settle();
+            window.desktop_offset = .{ .settled = off };
+        }
+    }
+    window.retargetDesktopOffset(zero);
+}
+
+pub fn moveTo(window: *Window, dest: Destination) void {
+    window.pending_move = null;
+    const target = dest.resolve();
+
+    const shown = switch (dest) {
+        .scratchpad => wm.scratchpad_open and wm.scratchpad.output != null,
+        .workspace => target.output != null and
+            !(wm.scratchpad_open and wm.scratchpad.output == target.output),
+    };
+    if (shown or !wm.config.animation.enabled or !window.visible()) {
+        window.setWorkspace(target);
+        return;
+    }
+
+    window.pending_move = dest;
+    wm.dirty = true;
+}
+
+pub fn finishMove(window: *Window) void {
+    const dest = window.pending_move orelse return;
+    const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
+    const slid = !window.desktop_offset.goal().eql(geom.Point.zero) and
+        window.desktop_offset.done(wm.millis(), duration);
+    if (!slid and window.escapeOffset() != null) return;
+
+    window.pending_move = null;
+    window.setWorkspace(dest.resolve());
+    wm.dirty = true;
 }
 
 pub fn moveFloat(window: *Window, dx: i32, dy: i32) void {
@@ -582,7 +655,8 @@ fn syncResizing(window: *Window) void {
 }
 
 pub fn syncVisibility(window: *Window) void {
-    const want_hidden = !window.visible() or window.slot.width == 0 or window.slot.height == 0;
+    const want_hidden = !window.visible() or window.slot.width == 0 or window.slot.height == 0 or
+        (window.fullscreen != null and window.scratchHidden());
     if (want_hidden == window.hidden) return;
 
     if (want_hidden) window.obj.hide() else window.obj.show();
