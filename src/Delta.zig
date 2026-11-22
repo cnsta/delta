@@ -89,6 +89,7 @@ animating_since: ?i64 = null,
 last_anim_report: i64 = 0,
 
 manage_count: u64 = 0,
+focus_serial: u64 = 0,
 render_count: u64 = 0,
 
 pub const stop_timeout_ms = 1000;
@@ -433,10 +434,7 @@ pub fn deinit(delta: *Delta) void {
         output.removed = true;
         output.maybeDestroy();
     }
-    while (delta.workspaces.first()) |ws| {
-        ws.output = null;
-        ws.maybeDestroy();
-    }
+    while (delta.workspaces.first()) |ws| ws.destroy();
     while (delta.heads.first()) |head| head.destroy();
     delta.keyboard.deinit();
     while (delta.libinput_devices.first()) |device| device.destroy();
@@ -589,6 +587,12 @@ pub fn pollTimeout(delta: *Delta) i32 {
         if (soonest == null or deadline < soonest.?) soonest = deadline;
     }
 
+    if (delta.server) |*server| {
+        if (server.deadline(delta.now)) |deadline| {
+            if (soonest == null or deadline < soonest.?) soonest = deadline;
+        }
+    }
+
     if (delta.animating()) {
         const next = @max(delta.next_frame, delta.now);
         if (soonest == null or next < soonest.?) soonest = next;
@@ -628,6 +632,7 @@ pub fn tick(delta: *Delta) void {
             delta.dirty = true;
         }
     } else {
+        if (delta.animating_since != null) delta.dirty = true;
         delta.next_frame = 0;
         delta.animating_since = null;
     }
