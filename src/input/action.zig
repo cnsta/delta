@@ -15,6 +15,9 @@ pub const Action = union(enum) {
     focus_direction: geom.Direction,
     move_direction: geom.Direction,
     focus_workspace: Workspace.Id,
+    focus_workspace_previous,
+    cycle_workspace: Seat.Step,
+    focus_last,
     send_to_workspace: Workspace.Id,
     pointer_move,
     pointer_resize,
@@ -24,6 +27,8 @@ pub const Action = union(enum) {
     toggle_float,
     scratchpad,
     send_to_scratchpad,
+    toggle_app: []const []const u8,
+    toggle_sticky,
     /// Deprecated alias of `scratchpad` (an empty scratchpad shows the desktop).
     show_desktop,
     exit,
@@ -42,7 +47,10 @@ pub const Action = union(enum) {
             .close => seat.closeFocused(),
             .focus_next => seat.focusNext(),
             .focus_direction => |dir| seat.focusDirection(dir),
-            .focus_workspace => |id| seat.focusWorkspace(id),
+            .focus_workspace => |id| seat.focusWorkspaceAction(id),
+            .focus_workspace_previous => seat.focusWorkspacePrevious(),
+            .cycle_workspace => |step| seat.cycleWorkspace(step),
+            .focus_last => seat.focusLast(),
             .send_to_workspace => |id| seat.sendToWorkspace(id),
             .pointer_move => seat.startPointerMove(),
             .pointer_resize => seat.startPointerResize(),
@@ -53,8 +61,33 @@ pub const Action = union(enum) {
             .toggle_split => seat.toggleSplit(),
             .scratchpad, .show_desktop => wm.toggleScratchpad(seat),
             .send_to_scratchpad => seat.toggleScratchpadWindow(),
+            .toggle_app => |args| seat.toggleApp(args),
+            .toggle_sticky => seat.toggleSticky(),
             .exit => wm.obj.exitSession(),
         }
+    }
+
+    pub fn invalid(action: Action) ?[]const u8 {
+        return switch (action) {
+            .focus_workspace, .send_to_workspace => |id| if (id == 0) "workspace ids start at 1" else null,
+            .spawn => |argv| if (argv.len == 0) "spawn needs a command" else null,
+            .toggle_app => |args| if (args.len == 0) "toggle_app needs an app_id glob" else null,
+            else => null,
+        };
+    }
+
+    pub fn dupe(action: Action, gpa: std.mem.Allocator) error{OutOfMemory}!Action {
+        return switch (action) {
+            .spawn => |argv| .{ .spawn = try dupeArgs(gpa, argv) },
+            .toggle_app => |args| .{ .toggle_app = try dupeArgs(gpa, args) },
+            else => action,
+        };
+    }
+
+    fn dupeArgs(gpa: std.mem.Allocator, args: []const []const u8) error{OutOfMemory}![]const []const u8 {
+        const out = try gpa.alloc([]const u8, args.len);
+        for (args, out) |arg, *slot| slot.* = try gpa.dupe(u8, arg);
+        return out;
     }
 
     pub const ParseError = error{
@@ -135,6 +168,9 @@ pub const Action = union(enum) {
             .spawn,
             .close,
             .focus_workspace,
+            .focus_workspace_previous,
+            .cycle_workspace,
+            .focus_last,
             .send_to_workspace,
             .pointer_move,
             .pointer_resize,
@@ -143,6 +179,8 @@ pub const Action = union(enum) {
             .toggle_split,
             .scratchpad,
             .send_to_scratchpad,
+            .toggle_app,
+            .toggle_sticky,
             .show_desktop,
             .exit,
             => false,
