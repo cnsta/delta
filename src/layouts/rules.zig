@@ -208,6 +208,27 @@ fn fallbackDirection(blocked: geom.Edges) geom.Direction {
     return .down;
 }
 
+/// Where a window sits relative to the scratchpad.
+pub const ScratchPlace = enum {
+    /// In the scratchpad itself.
+    inside,
+    /// On the workspace the open scratchpad is drawn over.
+    covered,
+    elsewhere,
+};
+
+/// Whether a window slides off screen for the scratchpad: its own windows
+/// while it is closed, the covered workspace's while it is open, and any
+/// window waiting to finish a move (it slides out first).
+pub fn scratchHidden(open: bool, where: ScratchPlace, moving: bool) bool {
+    if (moving) return true;
+    return switch (where) {
+        .inside => !open,
+        .covered => open,
+        .elsewhere => false,
+    };
+}
+
 pub fn desktopClearance(box: geom.Rect, dir: geom.Direction, output: *const Output) i32 {
     return switch (dir) {
         .left, .right => output.width + @max(0, box.width),
@@ -332,6 +353,20 @@ test "showDesktopDirection falls back away from a bar when nothing else applies"
         geom.Direction.left,
         showDesktopDirection(false, null, geom.Rect.zero, &output, .{ .right = true }),
     );
+}
+
+test "scratchHidden swaps the scratchpad and the workspace it covers" {
+    try std.testing.expect(scratchHidden(false, .inside, false));
+    try std.testing.expect(!scratchHidden(true, .inside, false));
+
+    try std.testing.expect(scratchHidden(true, .covered, false));
+    try std.testing.expect(!scratchHidden(false, .covered, false));
+
+    try std.testing.expect(!scratchHidden(true, .elsewhere, false));
+    try std.testing.expect(!scratchHidden(false, .elsewhere, false));
+
+    try std.testing.expect(scratchHidden(true, .inside, true));
+    try std.testing.expect(scratchHidden(false, .elsewhere, true));
 }
 
 test "desktopClearance measures the full off-screen distance" {
