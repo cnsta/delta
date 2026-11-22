@@ -12,6 +12,8 @@ const log = std.log.scoped(.ipc);
 pub const max_clients = 8;
 const out_capacity = 64 * 1024;
 const in_capacity = 4 * 1024;
+pub const idle_ms = 2000;
+const backlog = 64;
 
 fd: posix.fd_t,
 
@@ -26,6 +28,7 @@ const Client = struct {
     fd: posix.fd_t = -1,
 
     streaming: bool = false,
+    last_active: i64 = 0,
 
     in: [in_capacity]u8 = undefined,
     in_len: usize = 0,
@@ -65,7 +68,7 @@ pub fn init(path: []const u8) ?Server {
         return null;
     }
 
-    const listen_rc = linux.listen(fd, max_clients);
+    const listen_rc = linux.listen(fd, backlog);
     if (syscall.failed(listen_rc)) {
         log.warn("cannot listen on {s}: errno {d}", .{ path, syscall.errno(listen_rc) });
         _ = std.c.close(fd);
@@ -91,10 +94,14 @@ pub fn deinit(server: *Server) void {
     server.* = undefined;
 }
 
-pub fn fill(server: *const Server, fds: []posix.pollfd) void {
+pub fn fill(server: *const Server, fds: []posix.pollfd, now: i64) void {
     std.debug.assert(fds.len == 1 + max_clients);
 
-    fds[0] = .{ .fd = server.fd, .events = posix.POLL.IN, .revents = 0 };
+    // When full, new connections wait in the backlog: accepting only to
+    // close them would make clients fail (and poll would spin on the
+    // readable listening socket).
+    const room = server.hasFree() or server.evictable(now) != null;
+    fds[0] = .{ .fd = server.fd, .events = if (room) posix.POLL.IN else 0, .revents = 0 };
 
     for (server.clients, fds[1..]) |client, *entry| {
         var events: i16 = 0;
@@ -105,10 +112,10 @@ pub fn fill(server: *const Server, fds: []posix.pollfd) void {
     }
 }
 
-pub fn dispatch(server: *Server, fds: []const posix.pollfd, handler: Handler) void {
+pub fn dispatch(server: *Server, fds: []const posix.pollfd, handler: Handler, now: i64) void {
     std.debug.assert(fds.len == 1 + max_clients);
 
-    if (fds[0].revents & posix.POLL.IN != 0) server.accept();
+    if (fds[0].revents & posix.POLL.IN != 0) server.accept(now);
 
     for (&server.clients, fds[1..]) |*client, entry| {
         if (client.fd < 0) continue;
@@ -121,14 +128,44 @@ pub fn dispatch(server: *Server, fds: []const posix.pollfd, handler: Handler) vo
         if (entry.revents & posix.POLL.OUT != 0) server.flush(client);
         if (client.fd < 0) continue;
 
-        if (entry.revents & posix.POLL.IN != 0) server.read(client, handler);
+        if (entry.revents & posix.POLL.IN != 0) {
+            client.last_active = now;
+            server.read(client, handler);
+        }
     }
+}
+
+pub fn deadline(server: *const Server, now: i64) ?i64 {
+    if (server.hasFree() or server.evictable(now) != null) return null;
+
+    var oldest: ?i64 = null;
+    for (server.clients) |client| {
+        if (client.fd < 0 or client.streaming) continue;
+        if (oldest == null or client.last_active < oldest.?) oldest = client.last_active;
+    }
+    return if (oldest) |t| t + idle_ms else null;
+}
+
+fn evictable(server: *const Server, now: i64) ?usize {
+    var pick: ?usize = null;
+    for (server.clients, 0..) |client, i| {
+        if (client.fd < 0 or client.streaming) continue;
+        if (now - client.last_active < idle_ms) continue;
+        if (pick == null or client.last_active < server.clients[pick.?].last_active) pick = i;
+    }
+    return pick;
 }
 
 pub const Handler = *const fn (request: []const u8, streaming: *bool) ?[]const u8;
 
-fn accept(server: *Server) void {
+fn accept(server: *Server, now: i64) void {
     while (true) {
+        if (!server.hasFree()) {
+            const i = server.evictable(now) orelse return;
+            log.warn("dropping an IPC client idle for {d}ms to make room", .{now - server.clients[i].last_active});
+            server.drop(&server.clients[i]);
+        }
+
         const rc = linux.accept4(server.fd, null, null, linux.SOCK.NONBLOCK | linux.SOCK.CLOEXEC);
 
         if (syscall.failed(rc)) {
@@ -141,14 +178,16 @@ fn accept(server: *Server) void {
 
         const fd: posix.fd_t = @intCast(rc);
 
-        const slot = server.free() orelse {
-            log.warn("refusing an IPC client, {d} already connected", .{max_clients});
-            _ = std.c.close(fd);
-            continue;
-        };
-
-        slot.* = .{ .fd = fd };
+        const slot = server.free().?;
+        slot.* = .{ .fd = fd, .last_active = now };
     }
+}
+
+fn hasFree(server: *const Server) bool {
+    for (server.clients) |client| {
+        if (client.fd < 0) return true;
+    }
+    return false;
 }
 
 fn free(server: *Server) ?*Client {
