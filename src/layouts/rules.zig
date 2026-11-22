@@ -3,6 +3,7 @@ const std = @import("std");
 const geom = @import("../util/geom.zig");
 const wm = &@import("../Delta.zig").instance;
 
+const Config = @import("../Config.zig");
 const Output = @import("../Output.zig");
 
 pub fn between() i32 {
@@ -89,6 +90,12 @@ pub fn tileBorders(tiled: Edges, bar: geom.Edges) Edges {
 }
 
 pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits, bar: geom.Edges) Placement {
+    return placeWith(box, area, limits, bar, true);
+}
+
+/// `bordered = false` (a `.border = false` rule): no border on any side, and
+/// no inset for one.
+pub fn placeWith(box: geom.Rect, area: geom.Rect, limits: Limits, bar: geom.Edges, bordered: bool) Placement {
     const half = @divExact(between(), 2);
     const border = borderWidth();
 
@@ -99,7 +106,7 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits, bar: geom.Edges) P
         .bottom = !sticks(box.y + box.height, area.y + area.height),
     };
 
-    const borders = tileBorders(tiled, bar);
+    const borders: Edges = if (bordered) tileBorders(tiled, bar) else .{};
 
     const left = inset(borders.left, border) + inset(tiled.left, half);
     const top = inset(borders.top, border) + inset(tiled.top, half);
@@ -266,6 +273,72 @@ pub fn scratchHidden(open: bool, where: ScratchPlace, moving: bool) bool {
         .covered => open,
         .elsewhere => false,
     };
+}
+
+/// How far `b` lies from `a` going `dir`, and how much they share across
+/// it; null if `b` is not that way or doesn't overlap across it.
+pub const Reach = struct { gap: i32, overlap: i32 };
+
+pub fn reach(a: geom.Rect, b: geom.Rect, dir: geom.Direction) ?Reach {
+    const overlap = switch (dir) {
+        .left, .right => @min(a.y + a.height, b.y + b.height) - @max(a.y, b.y),
+        .up, .down => @min(a.x + a.width, b.x + b.width) - @max(a.x, b.x),
+    };
+    if (overlap <= 0) return null;
+
+    const gap = switch (dir) {
+        .left => if (b.x + b.width <= a.x) a.x - (b.x + b.width) else return null,
+        .right => if (b.x >= a.x + a.width) b.x - (a.x + a.width) else return null,
+        .up => if (b.y + b.height <= a.y) a.y - (b.y + b.height) else return null,
+        .down => if (b.y >= a.y + a.height) b.y - (a.y + a.height) else return null,
+    };
+    return .{ .gap = gap, .overlap = overlap };
+}
+
+pub const Directional = struct { reach: Reach, serial: u64 };
+
+/// Directional focus: of the windows about as near as the nearest (within
+/// `slack`, so a column split three ways counts as one wall), the most
+/// recently focused wins, then the one sharing the most edge. Going right
+/// and back left thus returns to the window you came from.
+pub fn preferDirectional(cand: Directional, best: ?Directional, nearest: i32, slack: i32) bool {
+    if (cand.reach.gap > nearest + slack) return false;
+    const b = best orelse return true;
+    if (cand.serial != b.serial) return cand.serial > b.serial;
+    return cand.reach.overlap > b.reach.overlap;
+}
+
+/// A rule's `.size`/`.position` over a float's natural box. Each value is a
+/// fraction when <= 1 (of the work area for sizes; of the free space for
+/// positions, so 0 = left/top, 0.5 = centred, 1 = right/bottom) and pixels
+/// above that (positions from the work area's left/top). Without a position
+/// a resized box stays centred where it was.
+pub fn ruleBox(area: geom.Rect, natural: geom.Rect, size: ?Config.RuleSize, position: ?Config.RulePosition) geom.Rect {
+    var box = natural;
+
+    if (size) |s| {
+        box.width = @max(1, ruleExtent(s.width, area.width));
+        box.height = @max(1, ruleExtent(s.height, area.height));
+        box.x = natural.x + @divTrunc(natural.width - box.width, 2);
+        box.y = natural.y + @divTrunc(natural.height - box.height, 2);
+    }
+
+    if (position) |p| {
+        box.x = area.x + ruleOffset(p.x, area.width - box.width);
+        box.y = area.y + ruleOffset(p.y, area.height - box.height);
+    }
+
+    return box;
+}
+
+fn ruleExtent(value: f32, total: i32) i32 {
+    const v: f32 = if (value <= 1) value * @as(f32, @floatFromInt(total)) else value;
+    return @intFromFloat(@round(std.math.clamp(v, 0, 1 << 20)));
+}
+
+fn ruleOffset(value: f32, free: i32) i32 {
+    if (value > 1) return @intFromFloat(@round(@min(value, 1 << 20)));
+    return @intFromFloat(@round(value * @as(f32, @floatFromInt(@max(0, free)))));
 }
 
 pub fn desktopClearance(box: geom.Rect, dir: geom.Direction, output: *const Output) i32 {
@@ -528,4 +601,58 @@ test "resizeBox keeps the opposite edge when the hints stop it" {
     const tiny = resizeBox(start, 1000, 0, .{ .left = true, .top = true }, .{});
     try std.testing.expectEqual(@as(i32, 1), tiny.width);
     try std.testing.expectEqual(@as(i32, 299), tiny.x);
+}
+
+test "directional focus returns to the window it came from" {
+    // a | b over c: from a going right, b and c are both adjacent.
+    const a: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 200 };
+    const b: geom.Rect = .{ .x = 110, .y = 0, .width = 100, .height = 95 };
+    const c: geom.Rect = .{ .x = 110, .y = 105, .width = 100, .height = 95 };
+
+    const rb = reach(a, b, .right).?;
+    const rc = reach(a, c, .right).?;
+    try std.testing.expectEqual(@as(i32, 10), rb.gap);
+    try std.testing.expect(reach(a, b, .left) == null);
+    try std.testing.expect(reach(b, c, .right) == null);
+
+    // Never focused: the wider overlap wins (equal here, so the first stays).
+    const nb: Directional = .{ .reach = rb, .serial = 0 };
+    const nc: Directional = .{ .reach = rc, .serial = 0 };
+    try std.testing.expect(preferDirectional(nb, null, 10, 8));
+    try std.testing.expect(!preferDirectional(nc, nb, 10, 8));
+
+    // c was focused last: it wins over b.
+    const fc: Directional = .{ .reach = rc, .serial = 5 };
+    try std.testing.expect(preferDirectional(fc, nb, 10, 8));
+
+    // Something much farther never wins, however recent.
+    const far: Directional = .{ .reach = .{ .gap = 300, .overlap = 200 }, .serial = 99 };
+    try std.testing.expect(!preferDirectional(far, nb, 10, 8));
+}
+
+test "ruleBox sizes by fraction or pixels and positions in the free space" {
+    const area: geom.Rect = .{ .x = 0, .y = 30, .width = 1000, .height = 500 };
+    const natural: geom.Rect = .{ .x = 400, .y = 230, .width = 200, .height = 100 };
+
+    try std.testing.expectEqual(natural, ruleBox(area, natural, null, null));
+
+    // Half the area, centred on the natural box.
+    const half = ruleBox(area, natural, .{ .width = 0.5, .height = 0.5 }, null);
+    try std.testing.expectEqual(geom.Rect{ .x = 250, .y = 155, .width = 500, .height = 250 }, half);
+
+    // Pixels, pinned bottom-right (1 = flush with the far edge).
+    const px = ruleBox(area, natural, .{ .width = 300, .height = 200 }, .{ .x = 1, .y = 1 });
+    try std.testing.expectEqual(geom.Rect{ .x = 700, .y = 330, .width = 300, .height = 200 }, px);
+
+    // Pixel position from the work area's corner, natural size.
+    const at = ruleBox(area, natural, null, .{ .x = 20, .y = 10 });
+    try std.testing.expectEqual(geom.Rect{ .x = 20, .y = 40, .width = 200, .height = 100 }, at);
+}
+
+test "placeWith drops borders and their inset" {
+    useDefaultConfig();
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 200, .height = 100 };
+    const bare = placeWith(area, area, .{}, .{}, false);
+    try std.testing.expect(bare.borders.eql(.{}));
+    try std.testing.expectEqual(area, bare.content);
 }

@@ -317,6 +317,23 @@ pub const Zone = struct {
     before: bool,
 };
 
+pub fn dropPreview(size: geom.Size, zone: ?Zone) geom.Rect {
+    var rect: geom.Rect = .{ .x = 0, .y = 0, .width = size.width, .height = size.height };
+    const z = zone orelse return rect;
+
+    switch (z.split) {
+        .vertical => {
+            rect.width = @divTrunc(size.width, 2);
+            if (!z.before) rect.x = size.width - rect.width;
+        },
+        .horizontal => {
+            rect.height = @divTrunc(size.height, 2);
+            if (!z.before) rect.y = size.height - rect.height;
+        },
+    }
+    return rect;
+}
+
 // -- arrangement ---------------------------------------------------------
 
 /// `bar`: output edges with an exclusive layer, for `.between` borders.
@@ -331,7 +348,7 @@ pub fn arrange(layout: *Eddy, area: geom.Rect, bar: geom.Edges) void {
 
 fn place(node: Node, rect: geom.Rect, area: geom.Rect, bar: geom.Edges) void {
     switch (node) {
-        .window => |w| w.applyPlacement(rules.place(rect, area, w.limits, bar)),
+        .window => |w| w.applyPlacement(rules.placeWith(rect, area, w.limits, bar, w.bordered())),
         .branch => |b| {
             b.rect = rect;
             const halves = subdivide(rect, b.split, b.ratio);
@@ -1045,4 +1062,17 @@ test "a resize never flips a split" {
     resize(&a, -500, 0);
     layout.arrange(area, .{});
     try std.testing.expectEqual(Split.horizontal, inner.split);
+}
+
+test "dropPreview covers the half on the zone's side, or all for a swap" {
+    const size: geom.Size = .{ .width = 101, .height = 50 };
+    try std.testing.expectEqual(geom.Rect{ .x = 0, .y = 0, .width = 101, .height = 50 }, dropPreview(size, null));
+    try std.testing.expectEqual(
+        geom.Rect{ .x = 51, .y = 0, .width = 50, .height = 50 },
+        dropPreview(size, .{ .split = .vertical, .before = false }),
+    );
+    try std.testing.expectEqual(
+        geom.Rect{ .x = 0, .y = 0, .width = 101, .height = 25 },
+        dropPreview(size, .{ .split = .horizontal, .before = true }),
+    );
 }
