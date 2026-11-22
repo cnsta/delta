@@ -81,6 +81,8 @@ pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
             .dialog = window.isDialog(),
             .hidden = window.hidden,
             .scratchpad = window.workspace == &wm.scratchpad,
+            .sticky = window.sticky,
+            .stashed = window.stashed,
 
             .decoration = if (window.decoration_hint) |h| decorationName(h) else null,
             .presentation = if (window.presentation_hint) |h| presentationName(h) else null,
@@ -91,6 +93,7 @@ pub fn windowInfos(arena: Allocator) ![]const protocol.WindowInfo {
     return out.items;
 }
 
+/// Scratchpad windows belong to no listed workspace.
 fn workspaceId(window: *const Window) ?u32 {
     const ws = window.workspace orelse return null;
     if (ws == &wm.scratchpad) return null;
