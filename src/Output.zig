@@ -80,6 +80,11 @@ pub fn maybeDestroy(output: *Output) void {
     output.workspace.output = null;
     output.previous = null;
 
+    if (wm.scratchpad.output == output) {
+        wm.scratchpad.output = null;
+        wm.scratchpad_open = false;
+    }
+
     var workspaces = wm.workspaces.iterator(.forward);
     while (workspaces.next()) |ws| {
         if (ws.last_output != output) continue;
@@ -164,6 +169,11 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
 }
 
 // -- queries -------------------------------------------------------------
+
+pub fn activeWorkspace(output: *Output) *Workspace {
+    if (wm.scratchpad_open and wm.scratchpad.output == output) return &wm.scratchpad;
+    return output.workspace;
+}
 
 pub fn rect(output: *const Output) geom.Rect {
     return .{
