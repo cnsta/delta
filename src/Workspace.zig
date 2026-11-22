@@ -227,7 +227,7 @@ pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*W
     var nearest: i32 = std.math.maxInt(i32);
     var it = ws.windows.iterator(.forward);
     while (it.next()) |other| {
-        if (other == from or other.slot.width == 0) continue;
+        if (other == from or other.slot.width == 0 or other.unfocusable()) continue;
         const r = rules.reach(a, other.slot, dir) orelse continue;
         nearest = @min(nearest, r.gap);
     }
@@ -237,7 +237,7 @@ pub fn windowInDirection(ws: *Workspace, from: *Window, dir: geom.Direction) ?*W
     var best_score: ?rules.Directional = null;
     it = ws.windows.iterator(.forward);
     while (it.next()) |other| {
-        if (other == from or other.slot.width == 0) continue;
+        if (other == from or other.slot.width == 0 or other.unfocusable()) continue;
         const r = rules.reach(a, other.slot, dir) orelse continue;
         const score: rules.Directional = .{ .reach = r, .serial = other.focus_serial };
         if (rules.preferDirectional(score, best_score, nearest, rules.between())) {
