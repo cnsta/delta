@@ -38,24 +38,57 @@ pub const Edges = struct {
     }
 };
 
+pub const all_edges: Edges = .{ .top = true, .bottom = true, .left = true, .right = true };
+
 pub const Placement = struct {
     content: geom.Rect,
     tiled: Edges,
+    borders: Edges = all_edges,
 };
 
+/// The usable area inset by each side's outer gap.
 pub fn workArea(output: *const Output) geom.Rect {
     const usable = output.usableArea();
-    const outer = edge();
+    const bar = output.blockedEdges();
+    const left = outerGap(bar.left);
+    const top = outerGap(bar.top);
+    const right = outerGap(bar.right);
+    const bottom = outerGap(bar.bottom);
 
     return .{
-        .x = usable.x - output.x + outer,
-        .y = usable.y - output.y + outer,
-        .width = @max(1, usable.width - 2 * outer),
-        .height = @max(1, usable.height - 2 * outer),
+        .x = usable.x - output.x + left,
+        .y = usable.y - output.y + top,
+        .width = @max(1, usable.width - left - right),
+        .height = @max(1, usable.height - top - bottom),
     };
 }
 
-pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
+/// Gap between the tiles and an output edge: `gaps.bar` (else `edge`) where
+/// an exclusive layer (a bar) sits. With `.between` borders a bare edge has no
+/// border, so no gap either.
+pub fn outerGap(bar: bool) i32 {
+    if (bar) return wm.config.gaps.bar orelse edge();
+    return switch (wm.config.border.style) {
+        .all => edge(),
+        .between => 0,
+    };
+}
+
+/// Edges of a tile that get a border: all, or with `.between` only those
+/// facing another tile (`tiled`) or a bar.
+pub fn tileBorders(tiled: Edges, bar: geom.Edges) Edges {
+    return switch (wm.config.border.style) {
+        .all => all_edges,
+        .between => .{
+            .top = tiled.top or bar.top,
+            .bottom = tiled.bottom or bar.bottom,
+            .left = tiled.left or bar.left,
+            .right = tiled.right or bar.right,
+        },
+    };
+}
+
+pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits, bar: geom.Edges) Placement {
     const half = @divExact(between(), 2);
     const border = borderWidth();
 
@@ -66,10 +99,12 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
         .bottom = !sticks(box.y + box.height, area.y + area.height),
     };
 
-    const left = border + if (tiled.left) half else 0;
-    const top = border + if (tiled.top) half else 0;
-    const right = border + if (tiled.right) half else 0;
-    const bottom = border + if (tiled.bottom) half else 0;
+    const borders = tileBorders(tiled, bar);
+
+    const left = inset(borders.left, border) + inset(tiled.left, half);
+    const top = inset(borders.top, border) + inset(tiled.top, half);
+    const right = inset(borders.right, border) + inset(tiled.right, half);
+    const bottom = inset(borders.bottom, border) + inset(tiled.bottom, half);
 
     var content: geom.Rect = .{
         .x = box.x + left,
@@ -80,7 +115,11 @@ pub fn place(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
 
     clamp(&content, limits, area);
 
-    return .{ .content = content, .tiled = tiled };
+    return .{ .content = content, .tiled = tiled, .borders = borders };
+}
+
+fn inset(on: bool, amount: i32) i32 {
+    return if (on) amount else 0;
 }
 
 pub fn placeFloat(box: geom.Rect, area: geom.Rect, limits: Limits) Placement {
@@ -247,8 +286,8 @@ test "place gives equal gaps regardless of how the area was divided" {
 
     const area: geom.Rect = .{ .x = 10, .y = 10, .width = 200, .height = 100 };
 
-    const left = place(.{ .x = 10, .y = 10, .width = 100, .height = 100 }, area, .{});
-    const right = place(.{ .x = 110, .y = 10, .width = 100, .height = 100 }, area, .{});
+    const left = place(.{ .x = 10, .y = 10, .width = 100, .height = 100 }, area, .{}, .{});
+    const right = place(.{ .x = 110, .y = 10, .width = 100, .height = 100 }, area, .{}, .{});
 
     const left_border_end = left.content.x + left.content.width + border;
     const right_border_start = right.content.x - border;
@@ -286,7 +325,7 @@ test "sticks absorbs the pixel lost to integer subdivision" {
 
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 101 };
 
-    const lower = place(.{ .x = 0, .y = 50, .width = 100, .height = 50 }, area, .{});
+    const lower = place(.{ .x = 0, .y = 50, .width = 100, .height = 50 }, area, .{}, .{});
     try std.testing.expect(!lower.tiled.bottom);
     try std.testing.expect(lower.tiled.top);
 }
@@ -297,11 +336,74 @@ test "clamp centres a window that cannot shrink to its box" {
     const area: geom.Rect = .{ .x = 0, .y = 0, .width = 400, .height = 400 };
     const box: geom.Rect = .{ .x = 0, .y = 0, .width = 100, .height = 400 };
 
-    const wide = place(box, area, .{ .min = .{ .width = 200, .height = 0 } });
+    const wide = place(box, area, .{ .min = .{ .width = 200, .height = 0 } }, .{});
     try std.testing.expectEqual(@as(i32, 200), wide.content.width);
 
     try std.testing.expect(wide.content.x >= area.x);
     try std.testing.expect(wide.content.x + wide.content.width <= area.x + area.width);
+}
+
+test "between borders only the edges facing a tile or a bar" {
+    useDefaultConfig();
+    wm.config.border.style = .between;
+    const border = borderWidth();
+    const half = @divExact(between(), 2);
+
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 200, .height = 100 };
+    const top_bar: geom.Edges = .{ .top = true };
+
+    const left = place(.{ .x = 0, .y = 0, .width = 100, .height = 100 }, area, .{}, top_bar);
+    const right = place(.{ .x = 100, .y = 0, .width = 100, .height = 100 }, area, .{}, top_bar);
+
+    try std.testing.expect(left.borders.eql(.{ .top = true, .right = true }));
+    try std.testing.expect(right.borders.eql(.{ .top = true, .left = true }));
+
+    // A side without a border gives its inset back to the content.
+    try std.testing.expectEqual(area.x, left.content.x);
+    try std.testing.expectEqual(area.y + border, left.content.y);
+    try std.testing.expectEqual(area.y + area.height, left.content.y + left.content.height);
+    try std.testing.expectEqual(100 - half - border, left.content.x + left.content.width);
+    try std.testing.expectEqual(area.x + area.width, right.content.x + right.content.width);
+
+    const lone = place(area, area, .{}, .{});
+    try std.testing.expect(lone.borders.eql(.{}));
+    try std.testing.expect(lone.content.eql(area));
+
+    const side_bar = place(area, area, .{}, .{ .left = true });
+    try std.testing.expect(side_bar.borders.eql(.{ .left = true }));
+    try std.testing.expectEqual(area.x + border, side_bar.content.x);
+}
+
+test "all style borders every edge whatever the bar" {
+    useDefaultConfig();
+    const area: geom.Rect = .{ .x = 0, .y = 0, .width = 200, .height = 100 };
+    const lone = place(area, area, .{}, .{ .top = true });
+    try std.testing.expect(lone.borders.eql(all_edges));
+    try std.testing.expectEqual(area.x + borderWidth(), lone.content.x);
+}
+
+test "outer gaps: bar override, and none on bare edges with between borders" {
+    useDefaultConfig();
+    try std.testing.expectEqual(edge(), outerGap(true));
+    try std.testing.expectEqual(edge(), outerGap(false));
+
+    wm.config.gaps.bar = 0;
+    try std.testing.expectEqual(@as(i32, 0), outerGap(true));
+    try std.testing.expectEqual(edge(), outerGap(false));
+
+    wm.config.border.style = .between;
+    wm.config.gaps.bar = null;
+    try std.testing.expectEqual(edge(), outerGap(true));
+    try std.testing.expectEqual(@as(i32, 0), outerGap(false));
+
+    var output = testOutput(1000, 0, 1920, 1080);
+    output.usable = .{ .x = 1000, .y = 34, .width = 1920, .height = 1046 };
+    try std.testing.expect(workArea(&output).eql(.{
+        .x = 0,
+        .y = 34 + edge(),
+        .width = 1920,
+        .height = 1046 - edge(),
+    }));
 }
 
 fn testOutput(x: i32, y: i32, width: i32, height: i32) Output {
