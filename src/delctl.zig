@@ -30,6 +30,16 @@ const usage =
 ;
 
 pub fn main(init: std.process.Init) !void {
+    run(init) catch |err| switch (err) {
+        error.ConnectionResetByPeer, error.ConnectionClosed => {
+            try write(2, "delctl: delta closed the connection\n");
+            std.process.exit(1);
+        },
+        else => return err,
+    };
+}
+
+fn run(init: std.process.Init) !void {
     const gpa = init.gpa;
 
     const args = try init.minimal.args.toSlice(gpa);
