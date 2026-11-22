@@ -27,12 +27,16 @@ window_rules: []const WindowRule = &.{},
 pub const Gaps = struct {
     between: i32 = 8,
     edge: i32 = 8,
+    bar: ?i32 = null,
 };
 
 pub const Border = struct {
     width: i32 = 2,
+    style: Style = .all,
     focused: u24 = 0x4c7a5d,
     inactive: u24 = 0x504945,
+
+    pub const Style = enum { all, between };
 };
 
 pub const Input = struct {
@@ -429,7 +433,9 @@ fn validate(gpa: Allocator, config: Config, report: *?[]const u8) error{OutOfMem
 
     if (try validateKeyboard(gpa, config.input.keyboard, report)) return true;
 
-    if (config.gaps.between < 0 or config.gaps.edge < 0 or config.border.width < 0) {
+    if (config.gaps.between < 0 or config.gaps.edge < 0 or (config.gaps.bar orelse 0) < 0 or
+        config.border.width < 0)
+    {
         report.* = try std.fmt.allocPrint(gpa, "gaps and border width must not be negative", .{});
         return true;
     }
