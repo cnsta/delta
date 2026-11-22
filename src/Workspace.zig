@@ -64,7 +64,7 @@ pub fn firstUnmapped() *Workspace {
 
 pub fn forNewWindow() *Workspace {
     if (wm.activeSeat()) |seat| {
-        if (seat.output) |output| return output.workspace;
+        if (seat.output) |output| return output.activeWorkspace();
     }
     if (wm.outputs.first()) |output| return output.workspace;
     return getOrCreate(1);
@@ -154,6 +154,14 @@ pub fn raiseFloat(ws: *Workspace) void {
 
 pub fn isEmpty(ws: *const Workspace) bool {
     return ws.windows.empty();
+}
+
+pub fn lastFocusable(ws: *Workspace) ?*Window {
+    var it = ws.windows.iterator(.reverse);
+    while (it.next()) |window| {
+        if (!window.scratchHidden()) return window;
+    }
+    return null;
 }
 
 pub fn visible(ws: *const Workspace) bool {
