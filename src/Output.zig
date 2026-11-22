@@ -7,6 +7,7 @@ const fatal = std.process.fatal;
 
 const wm = &@import("Delta.zig").instance;
 const geom = @import("util/geom.zig");
+const glob = @import("util/glob.zig");
 const list = @import("util/list.zig");
 const string = @import("util/string.zig");
 
@@ -28,8 +29,6 @@ height: i32 = 0,
 usable: ?geom.Rect = null,
 
 workspace: *Workspace,
-
-previous: ?*Workspace = null,
 
 shell: ?*river.LayerShellOutputV1 = null,
 
@@ -78,7 +77,6 @@ pub fn maybeDestroy(output: *Output) void {
     wm.ipc_dirty = true;
 
     output.workspace.output = null;
-    output.previous = null;
 
     if (wm.scratchpad.output == output) {
         wm.scratchpad.output = null;
@@ -125,27 +123,40 @@ pub fn maybeDestroy(output: *Output) void {
 pub fn setWorkspace(output: *Output, target: *Workspace) void {
     if (output.workspace == target) return;
 
-    if (target.output) |other| {
-        other.workspace = other.previous orelse Workspace.firstUnmapped();
-        other.workspace.output = other;
-        other.previous = null;
+    const outgoing = output.workspace;
+    wm.ipc_dirty = true;
 
-        var it = target.windows.iterator(.forward);
-        while (it.next()) |window| {
-            if (window.fullscreen == other) window.fullscreen = output;
-        }
+    // Shown on another output: swap, so neither output is left without a
+    // workspace and nothing points at one that may be freed later.
+    if (target.output) |other| {
+        swapFullscreen(target, other, output);
+        swapFullscreen(outgoing, output, other);
+
+        other.workspace = outgoing;
+        outgoing.output = other;
+        outgoing.last_output = null;
+        outgoing.offset = .zero;
+
+        output.workspace = target;
+        target.output = output;
+        target.last_output = null;
+        target.offset = .zero;
+
+        wm.dirty = true;
+        return;
     }
 
-    const outgoing = output.workspace;
+    var sticky = list.safeIterator(Window, .workspace_link, &outgoing.windows);
+    while (sticky.next()) |window| {
+        if (window.sticky) window.setWorkspace(target);
+    }
+
     outgoing.output = null;
     outgoing.last_output = if (outgoing.isEmpty()) null else output;
-    output.previous = outgoing;
 
     output.workspace = target;
     target.output = output;
     target.last_output = null;
-
-    wm.ipc_dirty = true;
 
     const duration = if (wm.config.animation.enabled) wm.config.animation.duration else 0;
     const curve = wm.config.animation.curve;
@@ -165,6 +176,13 @@ pub fn setWorkspace(output: *Output, target: *Workspace) void {
     } else {
         outgoing.offset = .zero;
         target.offset = .zero;
+    }
+}
+
+fn swapFullscreen(ws: *Workspace, from: *Output, to: *Output) void {
+    var it = ws.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (window.fullscreen == from) window.fullscreen = to;
     }
 }
 
@@ -213,6 +231,16 @@ pub fn blockedEdges(output: *const Output) geom.Edges {
 
 pub fn contains(output: *const Output, point: geom.Point) bool {
     return output.rect().contains(point);
+}
+
+/// The first output whose name matches the glob.
+pub fn matching(pattern: []const u8) ?*Output {
+    var it = wm.outputs.iterator(.forward);
+    while (it.next()) |output| {
+        const name = output.name orelse continue;
+        if (glob.match(pattern, name)) return output;
+    }
+    return null;
 }
 
 pub fn at(point: geom.Point) ?*Output {
