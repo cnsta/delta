@@ -156,13 +156,14 @@ pub fn workspace(seat: *Seat) ?*Workspace {
         if (w.workspace) |ws| return ws;
     }
     const o = seat.output orelse return null;
-    return o.workspace;
+    return o.activeWorkspace();
 }
 
 fn focusState(seat: *const Seat) seatpick.Focus {
     const window = seat.focused orelse return .none;
     const ws = window.workspace;
-    return seatpick.classifyFocus(true, ws != null, if (ws) |w| w.output != null else false);
+    const shown = if (ws) |w| w.output != null and !window.scratchHidden() else false;
+    return seatpick.classifyFocus(true, ws != null, shown);
 }
 
 fn revalidateFocus(seat: *Seat) void {
@@ -408,13 +409,14 @@ fn focusAndMaybeRaise(seat: *Seat, window: ?*Window, raise_it: bool) bool {
         if (!seatpick.mayFallBack(seat.focusState())) return false;
 
         const ws = seat.workspace() orelse break :blk null;
-        break :blk ws.windows.last();
+        break :blk ws.lastFocusable();
     };
 
     if (target) |w| {
         if (w.workspace) |ws| {
             if (ws.output == null) return false;
         }
+        if (w.scratchHidden()) return false;
     }
 
     if (seat.focused == target) return false;
@@ -516,6 +518,7 @@ pub fn toggleSplit(seat: *Seat) void {
 }
 
 pub fn focusWorkspace(seat: *Seat, id: Workspace.Id) void {
+    wm.closeScratchpad();
     const target = Workspace.getOrCreate(id);
 
     if (seat.workspace() == target) return;
@@ -535,6 +538,8 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
     const target = Workspace.getOrCreate(id);
     if (window.workspace == target) return;
 
+    window.pending_move = null;
+    window.scratch_home = null;
     window.setWorkspace(target);
     window.manual.workspace = true;
 
@@ -543,6 +548,25 @@ pub fn sendToWorkspace(seat: *Seat, id: Workspace.Id) void {
         seat.focusWorkspace(id);
         return;
     }
+
+    seat.dropFocus();
+    if (seat.focus(null)) seat.warpTo(seat.focused);
+}
+
+pub fn toggleScratchpadWindow(seat: *Seat) void {
+    const window = seat.focused orelse return;
+    const ws = window.workspace orelse return;
+
+    if (ws == &wm.scratchpad) {
+        const home = window.scratch_home orelse
+            if (wm.scratchpad.output orelse seat.output) |o| o.workspace.id else 1;
+        window.scratch_home = null;
+        window.moveTo(.{ .workspace = home });
+    } else {
+        window.scratch_home = ws.id;
+        window.moveTo(.scratchpad);
+    }
+    window.manual.workspace = true;
 
     seat.dropFocus();
     if (seat.focus(null)) seat.warpTo(seat.focused);
@@ -774,7 +798,8 @@ fn setupDefaultKeyBindings(seat: *Seat) void {
     }
 
     XkbBinding.create(seat, super, .v, .toggle_split);
-    XkbBinding.create(seat, super, .Tab, .show_desktop);
+    XkbBinding.create(seat, super, .Tab, .scratchpad);
+    XkbBinding.create(seat, super_shift, .s, .send_to_scratchpad);
 
     const question: xkb.Keysym = @fromBackingInt(@intCast(0x03f));
     const minus: xkb.Keysym = @fromBackingInt(@intCast(0x02d));
