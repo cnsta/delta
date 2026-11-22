@@ -94,7 +94,8 @@ options, everything has a default and anything omitted keeps it.
 
 ```zig
 .{
-    .gaps = .{ .between = 8, .edge = 8 },
+    .gaps = .{ .between = 8, .edge = 8, .bar = 0 }, // .bar: next to a bar, default .edge
+    .border = .{ .width = 2, .style = .between }, // borders only between tiles and the bar
 
     .input = .{
         .repeat_delay = 400, // ms

@@ -3,10 +3,16 @@
 // Every field is optional. Anything omitted keeps its default. Unknown fields
 // are an error rather than being ignored, so a typo tells you about itself.
 .{
-    .gaps = .{ .between = 4, .edge = 4 },
+    // .bar = gap on output edges holding a bar (any exclusive layer); unset =
+    // .edge. 0 suits a transparent bar.
+    .gaps = .{ .between = 4, .edge = 4, .bar = 4 },
 
     .border = .{
         .width = 4,
+        // .all (default) borders every edge. .between borders only tile edges
+        // that face another tile or a bar, and drops the gap on the rest, so
+        // a lone tile fills the screen. Floats keep every edge.
+        .style = .all,
         .focused = 0x4c7a5d,
         .inactive = 0x504945,
     },
