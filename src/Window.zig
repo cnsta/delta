@@ -62,6 +62,8 @@ decorated_focused: ?bool = null,
 border_focus: animation.Fade = .{ .settled = 0 },
 border_color_applied: ?color.Color = null,
 border_width_applied: i32 = 0,
+border_edges: rules.Edges = rules.all_edges,
+border_edges_applied: rules.Edges = rules.all_edges,
 csd_applied: ?bool = null,
 hidden: bool = false,
 resizing: bool = false,
@@ -420,6 +422,7 @@ fn apply(window: *Window, p: rules.Placement) void {
     if (window.fullscreen != null) return;
 
     window.syncTiled();
+    window.border_edges = p.borders;
 
     if (!p.content.size().eql(window.slot.size())) {
         window.overshoot = geom.Size.zero;
@@ -723,12 +726,14 @@ pub fn syncDecoration(window: *Window) void {
     );
 
     const width = wm.config.border.width;
+    const edges = window.border_edges;
     if (window.border_color_applied) |last| {
-        if (color.eql(last, c) and window.border_width_applied == width) return;
+        if (color.eql(last, c) and window.border_width_applied == width and
+            window.border_edges_applied.eql(edges)) return;
     }
 
     window.obj.setBorders(
-        .{ .top = true, .bottom = true, .left = true, .right = true },
+        .{ .top = edges.top, .bottom = edges.bottom, .left = edges.left, .right = edges.right },
         width,
         c.r,
         c.g,
@@ -737,6 +742,7 @@ pub fn syncDecoration(window: *Window) void {
     );
     window.border_color_applied = c;
     window.border_width_applied = width;
+    window.border_edges_applied = edges;
 }
 
 fn syncDecorationMode(window: *Window) void {
@@ -826,7 +832,6 @@ pub fn manage(window: *Window) void {
     window.syncFullscreen();
     window.syncResizing();
     window.syncDecorationMode();
-    window.syncDecoration();
     window.syncVisibility();
 
     if (window.fullscreen != null) return;
