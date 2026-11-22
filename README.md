@@ -15,14 +15,17 @@ stable. Expect the config format to change, and things to break; I do this on my
 spare time as a hobby. Contributions are appreciated, but perhaps forking the
 code and building something for yourself is more advisible.
 
-**Works:** bsp-ish tiling, workspaces, a global scratchpad (super+Tab shows it,
-super+shift+s sends a window in or back), floating windows, fullscreen, keyboard
-and pointer resize, directional focus, key repeat, keymaps (xkb layout, variant
-and options, with per-device overrides), pointer acceleration (flat, adaptive,
-or a custom maccel-style curve), touchpad settings, cursor theme, pointer
-warping, layer shell (bars, launchers, lock screens), window rules, live config
-reload, an IPC with a CLI (`delctl`, which can also trigger any keybinding
-action), multi-seat, basic animations.
+**Works:** bsp-ish tiling with drag-to-tile (a preview shows where a dragged
+tile lands), workspaces (next/previous, back-and-forth), a global scratchpad
+(super+Tab shows it, super+shift+s sends a window in or back), dropdown apps
+(`toggle_app`), sticky floats, floating windows, fullscreen, keyboard and
+pointer resize, directional focus that remembers where you came from,
+`focus_last`, key repeat, keymaps (xkb layout, variant and options, with
+per-device overrides), pointer acceleration (flat, adaptive, or a custom
+maccel-style curve), touchpad settings, cursor theme, pointer warping, layer
+shell (bars, launchers, lock screens), window rules, live config reload, an IPC
+with a CLI (`delctl`, which can also trigger any keybinding action), multi-seat,
+basic animations.
 
 **Missing:** Multi-seat is untested with more than one real seat, touchpad
 settings are untested entirely. General hardening, optimization, and time.
@@ -119,14 +122,19 @@ options, everything has a default and anything omitted keeps it.
 Pointer, touchpad and cursor settings also live under `.input`; see
 `example-config.zon`. Without `.keyboard`, delta leaves the keymap alone.
 
+Rules can also set floating `.size`/`.position` (fractions or pixels), the
+`.output` to open on, `.border = false`, `.scratchpad = true` and `.sticky`; see
+`example-config.zon`.
+
 A window counts as a `.dialog` if it has a parent or a fixed size. Dialogs float
 by default, and floating windows always stack above tiled ones.
 
 Rules are evaluated again whenever a window changes its app_id or title.
-`.float`, `.fullscreen` and `.workspace` follow when their outcome changes, but
-not once you have changed that property yourself. A rule that stops matching
-undoes nothing. `.focused` and `.warp` apply only when the window maps, and a
-rule moving the focused window elsewhere leaves focus where it was.
+`.float`, `.fullscreen`, `.workspace`, `.output`, `.scratchpad` and `.sticky`
+follow when their outcome changes, but not once you have changed that property
+yourself. A rule that stops matching undoes nothing. `.focused` and `.warp`
+apply only when the window maps, and a rule moving the focused window elsewhere
+leaves focus where it was.
 
 ZON rather than a bespoke format: no parser to write, no dependency to add, type
 and field errors for free, and it generates cleanly from Nix.

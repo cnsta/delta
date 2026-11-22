@@ -41,6 +41,9 @@
         // },
         .focus_follows_pointer = true,
         .focus_new_windows = true,
+        // focus_workspace on the workspace you're on goes back to the
+        // previous one.
+        .workspace_back_and_forth = false,
         // .none, .focus (keyboard focus moves) or .spawn (also new windows
         // launched from a keybinding, never children or click-opened ones).
         // Switching workspace never moves the pointer.
@@ -113,6 +116,16 @@
         .{ .mods = .{.super}, .keys = .{"Tab"}, .action = .scratchpad },
         .{ .mods = .{ .super, .shift }, .keys = .{"s"}, .action = .send_to_scratchpad },
 
+        // A dropdown: the first argument is an app_id glob, the rest the
+        // command that starts it. Pressing it slides the app in over the
+        // current workspace (floating, sized by its rule below), again hides
+        // it; not running = spawn.
+        .{ .mods = .{.super}, .keys = .{"d"}, .action = .{ .toggle_app = .{ "dropdown", "foot", "--app-id", "dropdown" } } },
+        // Sticky: the (floating) window follows its output's workspace.
+        .{ .mods = .{ .super, .shift }, .keys = .{"p"}, .action = .toggle_sticky },
+
+        // Directional focus prefers the window you last focused that way, so
+        // right-then-left returns where you were.
         .{ .mods = .{.super}, .keys = .{ "h", "Left" }, .action = .{ .focus_direction = .left } },
         .{ .mods = .{.super}, .keys = .{ "j", "Down" }, .action = .{ .focus_direction = .down } },
         .{ .mods = .{.super}, .keys = .{ "k", "Up" }, .action = .{ .focus_direction = .up } },
@@ -124,6 +137,12 @@
 
         .{ .mods = .{ .super, .shift }, .keys = .{ "plus", "KP_Add" }, .action = .{ .resize = .grow_height } },
         .{ .mods = .{ .super, .shift }, .keys = .{ "minus", "KP_Subtract" }, .action = .{ .resize = .shrink_height } },
+
+        // The most recently focused other window, switching workspace to it.
+        .{ .mods = .{.super}, .keys = .{"grave"}, .action = .focus_last },
+        // Also .next/.prev (any workspace) and .focus_workspace_previous.
+        .{ .mods = .{.super}, .keys = .{"bracketright"}, .action = .{ .cycle_workspace = .next_occupied } },
+        .{ .mods = .{.super}, .keys = .{"bracketleft"}, .action = .{ .cycle_workspace = .prev_occupied } },
 
         .{ .mods = .{.super}, .keys = .{"1"}, .action = .{ .focus_workspace = 1 } },
         .{ .mods = .{.super}, .keys = .{"2"}, .action = .{ .focus_workspace = 2 } },
@@ -148,8 +167,34 @@
         .{ .mods = .{ .super, .shift }, .keys = .{"Delete"}, .action = .exit },
     },
 
+    // Dragging a tile shows where it lands on the tile under the pointer:
+    // near an edge it splits that tile on that side, in the middle the two
+    // swap.
     .pointer_bindings = .{
         .{ .mods = .{.super}, .button = .left, .action = .pointer_move },
         .{ .mods = .{.super}, .button = .right, .action = .pointer_resize },
+    },
+
+    // Every matching rule applies, later ones winning per field. .matches:
+    // any entry matching is enough (.app_id/.title globs, .dialog);
+    // .excludes: none may match.
+    .window_rules = .{
+        .{ .matches = .{.{ .app_id = "vesktop" }}, .workspace = 4 },
+        // The opening workspace of whatever output matches this name glob.
+        .{ .matches = .{.{ .app_id = "obs" }}, .output = "HDMI-*" },
+        // Floating geometry, used when the window first floats. Values <= 1
+        // are fractions (of the work area for .size; of the free space for
+        // .position, 0 = left/top, 0.5 = centred, 1 = right/bottom), larger
+        // ones pixels. No .position = centred.
+        .{
+            .matches = .{.{ .app_id = "dropdown" }},
+            .float = true,
+            .size = .{ .width = 0.6, .height = 0.5 },
+            .position = .{ .x = 0.5, .y = 0 },
+        },
+        .{ .matches = .{.{ .title = "Picture-in-Picture" }}, .float = true, .sticky = true, .size = .{ .width = 480, .height = 270 }, .position = .{ .x = 1, .y = 1 } },
+        // Also: .border = false (no border, no inset), .scratchpad = true
+        // (open in the scratchpad), .fullscreen, .focused, .warp.
+        .{ .matches = .{.{ .app_id = "*", .dialog = true }}, .float = true },
     },
 }
