@@ -119,7 +119,8 @@
         // A dropdown: the first argument is an app_id glob, the rest the
         // command that starts it. Pressing it slides the app in over the
         // current workspace (floating, sized by its rule below), again hides
-        // it; not running = spawn.
+        // it; not running = spawn. Ghostty sets its app_id with --class, which
+        // needs a dot: .{ "*.dropdown", "ghostty", "--class=dev.cnst.dropdown" }.
         .{ .mods = .{.super}, .keys = .{"d"}, .action = .{ .toggle_app = .{ "dropdown", "foot", "--app-id", "dropdown" } } },
         // Sticky: the (floating) window follows its output's workspace.
         .{ .mods = .{ .super, .shift }, .keys = .{"p"}, .action = .toggle_sticky },
