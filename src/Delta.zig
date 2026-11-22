@@ -54,6 +54,8 @@ windows: wl.list.Head(Window, .link),
 seats: wl.list.Head(Seat, .link),
 active_seat: ?*Seat = null,
 workspaces: wl.list.Head(Workspace, .link),
+scratchpad: Workspace,
+scratchpad_open: bool = false,
 
 child_env: std.process.Environ.Map,
 config: Config,
@@ -82,7 +84,7 @@ shutting_down: bool = false,
 
 dirty: bool = false,
 now: i64 = 0,
-desktop_shown: bool = false,
+hide_all: bool = false,
 next_frame: i64 = 0,
 animating_since: ?i64 = null,
 last_anim_report: i64 = 0,
@@ -138,6 +140,7 @@ pub fn init(
         .windows = undefined,
         .seats = undefined,
         .workspaces = undefined,
+        .scratchpad = .{ .id = 0, .link = undefined, .windows = undefined },
     };
 
     instance.now = instance.sampleClock();
@@ -149,6 +152,8 @@ pub fn init(
     instance.windows.init();
     instance.seats.init();
     instance.workspaces.init();
+    instance.scratchpad.link.init();
+    instance.scratchpad.windows.init();
 
     instance.server = if (ipc_path) |path| Server.init(path) else null;
     instance.exportCursorEnv();
@@ -212,10 +217,16 @@ fn manageStart(delta: *Delta) void {
 
             workspace.arrange(rules.workArea(output));
         }
+        if (delta.scratchpad.output) |output| delta.scratchpad.arrange(rules.workArea(output));
     }
     {
         var it = list.safeIterator(Workspace, .link, &delta.workspaces);
         while (it.next()) |workspace| workspace.settle();
+    }
+    if (delta.locked_applied != delta.locked) {
+        delta.hide_all = delta.locked;
+        delta.locked_applied = delta.locked;
+        delta.publishShowDesktop();
     }
     {
         var it = list.safeIterator(Window, .link, &delta.windows);
@@ -224,8 +235,10 @@ fn manageStart(delta: *Delta) void {
             window.syncVisibility();
             window.syncFadeState();
             window.syncDesktopHidden();
+            window.finishMove();
         }
     }
+    delta.settleScratchpad();
     {
         var it = list.safeIterator(Seat, .link, &delta.seats);
         while (it.next()) |seat| seat.applyWarp();
@@ -235,10 +248,6 @@ fn manageStart(delta: *Delta) void {
         while (it.next()) |workspace| workspace.maybeDestroy();
     }
 
-    if (delta.locked_applied != delta.locked) {
-        delta.setDesktopShown(delta.locked);
-        delta.locked_applied = delta.locked;
-    }
     delta.syncLayerShellDefault();
     delta.publish();
     delta.obj.manageFinish();
@@ -249,18 +258,66 @@ fn manageStart(delta: *Delta) void {
     }
 }
 
-pub fn toggleShowDesktop(delta: *Delta) void {
-    delta.setDesktopShown(!delta.desktop_shown);
+pub fn toggleScratchpad(delta: *Delta, seat: *Seat) void {
+    if (delta.scratchpad_open) delta.closeScratchpad() else delta.openScratchpad(seat);
 }
 
-pub fn setDesktopShown(delta: *Delta, shown: bool) void {
-    if (delta.desktop_shown == shown) return;
-    delta.desktop_shown = shown;
+/// slides the seat's output's windows away and the scratchpad's in.
+pub fn openScratchpad(delta: *Delta, seat: *Seat) void {
+    if (delta.scratchpad_open) return;
+    const output = seat.output orelse delta.outputs.first() orelse return;
 
-    var it = delta.windows.iterator(.forward);
-    while (it.next()) |window| window.setDesktopHidden(delta.desktop_shown);
+    const moved = delta.scratchpad.output != output;
+    delta.scratchpad.output = output;
+    delta.scratchpad_open = true;
 
+    var it = delta.scratchpad.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (moved or window.desktop_offset.goal().eql(geom.Point.zero)) window.desktop_enter = true;
+    }
+
+    seat.dropFocus();
+    _ = seat.focus(delta.scratchpad.lastFocusable());
+
+    delta.scratchpadChanged();
+}
+
+pub fn closeScratchpad(delta: *Delta) void {
+    if (!delta.scratchpad_open) return;
+    delta.scratchpad_open = false;
+
+    var it = delta.seats.iterator(.forward);
+    while (it.next()) |seat| {
+        const focused = seat.focused orelse {
+            _ = seat.focus(null);
+            continue;
+        };
+        if (focused.workspace != &delta.scratchpad) continue;
+        seat.dropFocus();
+        _ = seat.focus(null);
+    }
+
+    delta.scratchpadChanged();
+}
+
+fn scratchpadChanged(delta: *Delta) void {
+    delta.dirty = true;
+    delta.ipc_dirty = true;
     delta.publishShowDesktop();
+}
+
+/// lets go of the output once a closed scratchpad's windows are off screen.
+fn settleScratchpad(delta: *Delta) void {
+    if (delta.scratchpad_open or delta.scratchpad.output == null) return;
+
+    const duration = if (delta.config.animation.enabled) delta.config.animation.duration else 0;
+    var it = delta.scratchpad.windows.iterator(.forward);
+    while (it.next()) |window| {
+        if (!window.desktop_offset.done(delta.millis(), duration)) return;
+    }
+
+    delta.scratchpad.output = null;
+    delta.dirty = true;
 }
 
 fn publishShowDesktop(delta: *Delta) void {
@@ -269,7 +326,7 @@ fn publishShowDesktop(delta: *Delta) void {
 
     const line = std.json.Stringify.valueAlloc(
         delta.gpa,
-        protocol.Event{ .show_desktop = delta.desktop_shown },
+        protocol.Event{ .show_desktop = delta.hide_all or delta.scratchpad_open },
         .{},
     ) catch return;
     defer delta.gpa.free(line);
@@ -473,6 +530,7 @@ const Cause = union(enum) {
     motion: *Window,
     fade: *Window,
     workspace: *Workspace,
+    scratchpad,
 };
 
 fn animationCause(delta: *Delta) Cause {
@@ -487,6 +545,7 @@ fn animationCause(delta: *Delta) Cause {
     while (ws_it.next()) |ws| {
         if (ws.animating()) return .{ .workspace = ws };
     }
+    if (!delta.scratchpad_open and delta.scratchpad.output != null) return .scratchpad;
     return .none;
 }
 
@@ -509,6 +568,7 @@ fn reportStuckAnimation(delta: *Delta, cause: Cause, now: i64) void {
         .motion => |w| log.warn("animation active for {d}s, held by window {s} (motion/desktop_offset/border_focus)", .{ secs, w.identifier() }),
         .fade => |w| log.warn("animation active for {d}s, held by window {s} (fade, pending_fade={})", .{ secs, w.identifier(), w.pending_fade }),
         .workspace => |ws| log.warn("animation active for {d}s, held by workspace {d} (slide offset)", .{ secs, ws.id }),
+        .scratchpad => log.warn("animation active for {d}s, held by the closing scratchpad", .{secs}),
     }
 }
 
