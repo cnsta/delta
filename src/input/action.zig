@@ -22,6 +22,9 @@ pub const Action = union(enum) {
     toggle_fullscreen,
     toggle_split,
     toggle_float,
+    scratchpad,
+    send_to_scratchpad,
+    /// Deprecated alias of `scratchpad` (an empty scratchpad shows the desktop).
     show_desktop,
     exit,
 
@@ -35,7 +38,7 @@ pub const Action = union(enum) {
     pub fn execute(action: Action, seat: *Seat) void {
         switch (action) {
             .none => {},
-            .spawn => |argv| if (!wm.desktop_shown) spawn(argv),
+            .spawn => |argv| if (!wm.hide_all) spawn(argv),
             .close => seat.closeFocused(),
             .focus_next => seat.focusNext(),
             .focus_direction => |dir| seat.focusDirection(dir),
@@ -48,7 +51,8 @@ pub const Action = union(enum) {
             .toggle_float => seat.toggleFloat(),
             .move_direction => |dir| seat.moveDirection(dir),
             .toggle_split => seat.toggleSplit(),
-            .show_desktop => wm.toggleShowDesktop(),
+            .scratchpad, .show_desktop => wm.toggleScratchpad(seat),
+            .send_to_scratchpad => seat.toggleScratchpadWindow(),
             .exit => wm.obj.exitSession(),
         }
     }
@@ -137,6 +141,8 @@ pub const Action = union(enum) {
             .toggle_fullscreen,
             .toggle_float,
             .toggle_split,
+            .scratchpad,
+            .send_to_scratchpad,
             .show_desktop,
             .exit,
             => false,
